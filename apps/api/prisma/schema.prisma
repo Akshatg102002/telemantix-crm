@@ -1,0 +1,537 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
+}
+
+// ─── Tenant & Auth ─────────────────────────────────────────────────────────
+
+model Tenant {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  logoUrl      String?
+  timezone     String   @default("Asia/Kolkata")
+  currency     String   @default("INR")
+  isActive     Boolean  @default(true)
+  settings     Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users          User[]
+  leads          Lead[]
+  serviceBoards  ServiceBoard[]
+  leadSources    LeadSource[]
+  automations    Automation[]
+  integrations   Integration[]
+  webhookLogs    WebhookLog[]
+  notifications  Notification[]
+  publishers     Publisher[]
+  channels       Channel[]
+  customSections CustomSection[]
+  apiKeys        ApiKey[]
+
+  @@schema("public")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  name         String
+  email        String
+  passwordHash String
+  role         String    @default("agent")
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedLeads        Lead[]         @relation("AssignedLeads")
+  createdLeads         Lead[]         @relation("CreatedLeads")
+  followUps            FollowUp[]     @relation("AssignedFollowUps")
+  tasks                Task[]         @relation("AssignedTasks")
+  notifications        Notification[]
+  refreshTokens        RefreshToken[]
+  leadHistories        LeadHistory[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("public")
+}
+
+model ApiKey {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  keyHash   String    @unique
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Service Board & Status Pipeline ───────────────────────────────────────
+
+model ServiceBoard {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  color       String   @default("#7B2FBE")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  statuses      Status[]
+  leads         Lead[]
+  customSections CustomSection[]
+  slaConfig     SlaConfig?
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model Status {
+  id             String   @id @default(uuid())
+  tenantId       String
+  serviceBoardId String
+  name           String
+  color          String   @default("#8A8A99")
+  sortOrder      Int      @default(0)
+  isDefault      Boolean  @default(false)
+  isTerminal     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  serviceBoard ServiceBoard @relation(fields: [serviceBoardId], references: [id], onDelete: Cascade)
+  subStatuses  SubStatus[]
+  leads        Lead[]
+
+  @@index([serviceBoardId])
+  @@schema("public")
+}
+
+model SubStatus {
+  id        String   @id @default(uuid())
+  statusId  String
+  name      String
+  color     String   @default("#8A8A99")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@index([statusId])
+  @@schema("public")
+}
+
+model SlaConfig {
+  id             String   @id @default(uuid())
+  serviceBoardId String   @unique
+  responseHours  Int      @default(24)
+  resolutionHours Int     @default(72)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  serviceBoard ServiceBoard @relation(fields: [serviceBoardId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ─── Lead & Related ─────────────────────────────────────────────────────────
+
+model LeadSource {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  color     String   @default("#7B2FBE")
+  iconUrl   String?
+  isActive  Boolean  @default(true)
+  weight    Float    @default(1.0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads     Lead[]
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model Lead {
+  id               String    @id @default(uuid())
+  tenantId         String
+  name             String
+  phone            String
+  email            String?
+  sourceId         String?
+  serviceBoardId   String?
+  statusId         String?
+  subStatusId      String?
+  assignedUserId   String?
+  createdByUserId  String?
+  publisherId      String?
+  dealValue        Float?
+  score            Int       @default(0)
+  isStale          Boolean   @default(false)
+  reEnquiredCount  Int       @default(0)
+  originalLeadId   String?
+  slaBreachedAt    DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source         LeadSource?     @relation(fields: [sourceId], references: [id])
+  serviceBoard   ServiceBoard?   @relation(fields: [serviceBoardId], references: [id])
+  status         Status?         @relation(fields: [statusId], references: [id])
+  subStatus      SubStatus?      @relation(fields: [subStatusId], references: [id])
+  assignedUser   User?           @relation("AssignedLeads", fields: [assignedUserId], references: [id])
+  createdByUser  User?           @relation("CreatedLeads", fields: [createdByUserId], references: [id])
+  publisher      Publisher?      @relation(fields: [publisherId], references: [id])
+  originalLead   Lead?           @relation("ReEnquiries", fields: [originalLeadId], references: [id])
+  reEnquiries    Lead[]          @relation("ReEnquiries")
+  histories      LeadHistory[]
+  followUps      FollowUp[]
+  tasks          Task[]
+  customFieldValues CustomFieldValue[]
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([tenantId, email])
+  @@index([tenantId, assignedUserId])
+  @@index([tenantId, statusId])
+  @@index([tenantId, serviceBoardId])
+  @@index([tenantId, score])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@schema("public")
+}
+
+model LeadHistory {
+  id        String   @id @default(uuid())
+  tenantId  String
+  leadId    String
+  userId    String?
+  event     String
+  field     String?
+  oldValue  String?
+  newValue  String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lead Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model LeadScore {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  field     String
+  operator  String
+  value     Json
+  weight    Float    @default(1.0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Follow-up & Task ───────────────────────────────────────────────────────
+
+model FollowUp {
+  id             String    @id @default(uuid())
+  tenantId       String
+  leadId         String
+  assignedUserId String?
+  type           String
+  status         String    @default("pending")
+  scheduledAt    DateTime
+  completedAt    DateTime?
+  note           String?
+  reminderJobId  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lead         Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedUser User? @relation("AssignedFollowUps", fields: [assignedUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([leadId])
+  @@index([tenantId, status])
+  @@index([scheduledAt])
+  @@schema("public")
+}
+
+model Task {
+  id             String    @id @default(uuid())
+  tenantId       String
+  leadId         String?
+  assignedUserId String?
+  title          String
+  description    String?
+  status         String    @default("open")
+  priority       String    @default("medium")
+  dueDate        DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lead         Lead?  @relation(fields: [leadId], references: [id])
+  assignedUser User?  @relation("AssignedTasks", fields: [assignedUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, assignedUserId])
+  @@index([tenantId, status])
+  @@schema("public")
+}
+
+// ─── Custom Fields ──────────────────────────────────────────────────────────
+
+model CustomSection {
+  id             String   @id @default(uuid())
+  tenantId       String
+  serviceBoardId String?
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceBoard ServiceBoard? @relation(fields: [serviceBoardId], references: [id])
+  customFields CustomField[]
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model CustomField {
+  id              String   @id @default(uuid())
+  tenantId        String
+  customSectionId String
+  name            String
+  fieldKey        String
+  fieldType       String
+  options         Json?
+  isRequired      Boolean  @default(false)
+  isSearchable    Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customSection   CustomSection      @relation(fields: [customSectionId], references: [id], onDelete: Cascade)
+  values          CustomFieldValue[]
+
+  @@index([tenantId])
+  @@index([customSectionId])
+  @@schema("public")
+}
+
+model CustomFieldValue {
+  id             String   @id @default(uuid())
+  tenantId       String
+  leadId         String
+  customFieldId  String
+  value          Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customField CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, customFieldId])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Automation ─────────────────────────────────────────────────────────────
+
+model Automation {
+  id             String   @id @default(uuid())
+  tenantId       String
+  serviceBoardId String?
+  name           String
+  description    String?
+  trigger        String
+  triggerConfig  Json     @default("{}")
+  conditions     Json     @default("[]")
+  actions        Json     @default("[]")
+  isActive       Boolean  @default(true)
+  isSystem       Boolean  @default(false)
+  runCount       Int      @default(0)
+  lastRunAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  logs   AutomationLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, trigger])
+  @@schema("public")
+}
+
+model AutomationLog {
+  id           String   @id @default(uuid())
+  tenantId     String
+  automationId String
+  leadId       String?
+  status       String
+  error        String?
+  payload      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Integrations & Webhooks ────────────────────────────────────────────────
+
+model Integration {
+  id           String    @id @default(uuid())
+  tenantId     String
+  type         String
+  name         String
+  isConnected  Boolean   @default(false)
+  config       Json      @default("{}")
+  webhookToken String?   @unique
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  webhookLogs WebhookLog[]
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model WebhookLog {
+  id            String   @id @default(uuid())
+  tenantId      String
+  integrationId String?
+  direction     String
+  source        String?
+  url           String?
+  method        String?
+  headers       Json?
+  requestBody   Json?
+  responseBody  Json?
+  statusCode    Int?
+  durationMs    Int?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration Integration? @relation(fields: [integrationId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@schema("public")
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(uuid())
+  tenantId  String
+  userId    String
+  title     String
+  body      String
+  type      String
+  data      Json?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, userId, isRead])
+  @@schema("public")
+}
+
+// ─── Publisher ──────────────────────────────────────────────────────────────
+
+model Publisher {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  company        String?
+  email          String?
+  phone          String?
+  trackingToken  String   @unique @default(uuid())
+  commissionPlan Json?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Channel ────────────────────────────────────────────────────────────────
+
+model Channel {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  type      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@schema("public")
+}

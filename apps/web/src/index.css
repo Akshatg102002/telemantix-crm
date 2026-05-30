@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 5%;
+    --foreground: 0 0% 96%;
+    --card: 240 4% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 4% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 271 60% 46%;
+    --primary-foreground: 0 0% 96%;
+    --secondary: 240 4% 13%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 13%;
+    --muted-foreground: 240 5% 60%;
+    --accent: 21 79% 54%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 271 60% 46%;
+    --radius: 0.625rem;
+  }
+
+  * { @apply border-border; }
+  html { @apply scroll-smooth; }
+  body {
+    @apply bg-bg text-text-primary font-sans antialiased;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(123,47,190,0.08), transparent);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-bg; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand-purple/60; }
+
+  ::selection { @apply bg-brand-purple/30 text-text-primary; }
+}
+
+@layer utilities {
+  .gradient-text {
+    @apply bg-brand-gradient bg-clip-text text-transparent;
+  }
+  .glass {
+    background: rgba(22, 22, 26, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .gradient-border {
+    position: relative;
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(123,47,190,0.6), rgba(196,62,138,0.4), rgba(232,98,42,0.2));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .shimmer-btn {
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+}
