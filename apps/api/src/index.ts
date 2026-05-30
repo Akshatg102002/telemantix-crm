@@ -21,6 +21,8 @@ import { userRoutes } from './routes/users';
 import { publisherRoutes } from './routes/publishers';
 import { taskRoutes } from './routes/tasks';
 import { customFieldRoutes } from './routes/custom-fields';
+import { publicRoutes } from './routes/public';
+import { superAdminRoutes } from './routes/super-admin';
 import { initSocket } from './lib/socket';
 
 // Start BullMQ workers
@@ -63,6 +65,8 @@ async function bootstrap() {
   await fastify.register(publisherRoutes, { prefix: '/api' });
   await fastify.register(taskRoutes, { prefix: '/api' });
   await fastify.register(customFieldRoutes, { prefix: '/api' });
+  await fastify.register(publicRoutes, { prefix: '/api' });
+  await fastify.register(superAdminRoutes, { prefix: '/api' });
 
   fastify.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 

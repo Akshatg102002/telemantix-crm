@@ -168,12 +168,136 @@ async function main() {
     });
   }
 
+  // ── Plans ────────────────────────────────────────────────────────────────
+  const starterFeatures = ['Lead Management', 'Follow-up System', 'Basic Analytics', '3 Integrations', 'Email Support'];
+  const growthFeatures = ['Everything in Starter', 'Automation Engine', 'All Integrations', 'WhatsApp & IVR', 'Advanced Analytics', 'Custom Fields', 'Priority Support'];
+  const enterpriseFeatures = ['Everything in Growth', 'Unlimited Users', 'Unlimited Leads', 'Dedicated Account Manager', 'SLA Support', 'Custom Integrations', 'On-premise Option'];
+
+  const starterPlan = await prisma.plan.upsert({
+    where: { slug: 'starter' },
+    update: {},
+    create: { id: randomUUID(), name: 'Starter', slug: 'starter', price: 1999, yearlyPrice: 19990, maxUsers: 5, maxLeads: 1000, features: starterFeatures, sortOrder: 0 },
+  });
+
+  const growthPlan = await prisma.plan.upsert({
+    where: { slug: 'growth' },
+    update: {},
+    create: { id: randomUUID(), name: 'Growth', slug: 'growth', price: 1799, yearlyPrice: 17990, maxUsers: 20, maxLeads: 10000, features: growthFeatures, isPopular: true, sortOrder: 1 },
+  });
+
+  const enterprisePlan = await prisma.plan.upsert({
+    where: { slug: 'enterprise' },
+    update: {},
+    create: { id: randomUUID(), name: 'Enterprise', slug: 'enterprise', price: 1599, yearlyPrice: 15990, maxUsers: -1, maxLeads: -1, features: enterpriseFeatures, sortOrder: 2 },
+  });
+
+  // Attach subscription to demo tenant
+  await prisma.subscription.upsert({
+    where: { tenantId: tenant.id },
+    update: {},
+    create: {
+      id: randomUUID(), tenantId: tenant.id, planId: growthPlan.id, status: 'active',
+      billingCycle: 'monthly', trialEndsAt: new Date(Date.now() + 14 * 86400000),
+      currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 30 * 86400000),
+    },
+  });
+
+  // ── Super Admin ───────────────────────────────────────────────────────────
+  const superAdminHash = await bcrypt.hash('SuperAdmin@123', 12);
+  await prisma.superAdmin.upsert({
+    where: { email: 'superadmin@telemantix.io' },
+    update: {},
+    create: { id: randomUUID(), name: 'Super Admin', email: 'superadmin@telemantix.io', passwordHash: superAdminHash },
+  });
+
+  // ── 5 Demo Companies ──────────────────────────────────────────────────────
+  const demoCompanies = [
+    { name: 'Estee Advisors', slug: 'estee-advisors', plan: growthPlan, status: 'active', users: 12, leads: 450, industry: 'Finance' },
+    { name: 'TechVentures India', slug: 'techventures-india', plan: starterPlan, status: 'trial', users: 3, leads: 89, industry: 'Technology' },
+    { name: 'PropDeals Realty', slug: 'propdeals-realty', plan: growthPlan, status: 'active', users: 8, leads: 320, industry: 'Real Estate' },
+    { name: 'EduConnect', slug: 'educonnect', plan: enterprisePlan, status: 'active', users: 25, leads: 1200, industry: 'Education' },
+    { name: 'FinServ Solutions', slug: 'finserv-solutions', plan: starterPlan, status: 'suspended', users: 2, leads: 45, industry: 'Finance' },
+  ];
+
+  for (const company of demoCompanies) {
+    const existing = await prisma.tenant.findUnique({ where: { slug: company.slug } });
+    if (existing) continue;
+
+    const companyId = randomUUID();
+    await prisma.tenant.create({
+      data: {
+        id: companyId, name: company.name, slug: company.slug,
+        industry: company.industry, companySize: '11-50', isActive: company.status !== 'suspended',
+        onboardedAt: faker.date.past({ years: 1 }),
+      },
+    });
+
+    await prisma.subscription.create({
+      data: {
+        id: randomUUID(), tenantId: companyId, planId: company.plan.id,
+        status: company.status, billingCycle: 'monthly',
+        trialEndsAt: new Date(Date.now() + 14 * 86400000),
+        currentPeriodStart: faker.date.recent({ days: 30 }),
+        currentPeriodEnd: new Date(Date.now() + 30 * 86400000),
+      },
+    });
+
+    // Create admin user for each company
+    const companyAdminHash = await bcrypt.hash('Admin@123', 10);
+    await prisma.user.create({
+      data: {
+        id: randomUUID(), tenantId: companyId,
+        name: `${company.name} Admin`,
+        email: `admin@${company.slug}.demo`,
+        passwordHash: companyAdminHash, role: 'admin',
+      },
+    });
+
+    // Create additional agents
+    for (let i = 1; i < Math.min(company.users, 4); i++) {
+      await prisma.user.create({
+        data: {
+          id: randomUUID(), tenantId: companyId,
+          name: faker.person.fullName(), email: faker.internet.email(),
+          passwordHash: companyAdminHash, role: 'agent',
+        },
+      });
+    }
+
+    // Create a basic service board + leads
+    const board = await prisma.serviceBoard.create({
+      data: { id: randomUUID(), tenantId: companyId, name: 'Sales Pipeline', color: '#7B2FBE' },
+    });
+    const statusNew = await prisma.status.create({
+      data: { id: randomUUID(), tenantId: companyId, serviceBoardId: board.id, name: 'New', color: '#8A8A99', sortOrder: 0, isDefault: true },
+    });
+
+    // Seed leads for this company
+    const leadsCount = Math.min(company.leads, 30); // cap at 30 for seeding speed
+    for (let i = 0; i < leadsCount; i++) {
+      await prisma.lead.create({
+        data: {
+          id: randomUUID(), tenantId: companyId,
+          name: faker.person.fullName(), phone: faker.phone.number(),
+          email: faker.internet.email(), statusId: statusNew.id,
+          serviceBoardId: board.id, score: faker.number.int({ min: 10, max: 95 }),
+          createdAt: faker.date.past({ years: 1 }),
+          updatedAt: faker.date.recent({ days: 30 }),
+        },
+      });
+    }
+  }
+
   console.log('✅ Seed complete!');
-  console.log('Demo credentials:');
+  console.log('');
+  console.log('Demo CRM credentials:');
   console.log('  admin@demo.com / Admin@123  (role: admin)');
   console.log('  manager@demo.com / Admin@123  (role: manager)');
   console.log('  agent1@demo.com / Admin@123  (role: agent)');
-  console.log('  agent2@demo.com / Admin@123  (role: agent)');
+  console.log('');
+  console.log('Super Admin credentials:');
+  console.log('  superadmin@telemantix.io / SuperAdmin@123');
+  console.log('  Login at: /super-admin/login');
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

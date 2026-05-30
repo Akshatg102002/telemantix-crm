@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Users, Target, Calendar, Zap, BarChart3, Plug, Settings,
-  Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight
+  Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight, CreditCard
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUiStore } from '../../store/ui'
@@ -10,7 +10,7 @@ import { useAuthStore } from '../../store/auth'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '../ui/tooltip'
 
 const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
+  { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Leads', icon: Target, href: '/leads' },
   { label: 'Pipeline', icon: FolderKanban, href: '/pipeline' },
   { label: 'Follow-ups', icon: Calendar, href: '/follow-ups' },
@@ -22,6 +22,7 @@ const navItems = [
   { label: 'Service Boards', icon: BookOpen, href: '/service-boards' },
   { label: 'Users', icon: Users, href: '/users' },
   { label: 'Notifications', icon: Bell, href: '/notifications' },
+  { label: 'Billing', icon: CreditCard, href: '/billing' },
   { label: 'Settings', icon: Settings, href: '/settings' },
 ]
 

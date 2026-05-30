@@ -84,4 +84,39 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     await fastify.prisma.leadSource.update({ where: { id }, data: { isActive: false } });
     return { success: true, data: null };
   });
+
+  // Billing — subscription + usage + available plans
+  fastify.get('/settings/billing', async (req) => {
+    const tenantId = req.user.tenantId;
+    const [subscription, userCount, leadCount, plans] = await Promise.all([
+      fastify.prisma.subscription.findUnique({
+        where: { tenantId },
+        include: { plan: true },
+      }),
+      fastify.prisma.user.count({ where: { tenantId, isActive: true } }),
+      fastify.prisma.lead.count({ where: { tenantId } }),
+      fastify.prisma.plan.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+    ]);
+    return {
+      success: true,
+      data: {
+        subscription,
+        usage: { users: userCount, leads: leadCount },
+        plans,
+      },
+    };
+  });
+
+  fastify.put('/settings/subscription', { preHandler: [requireRole('admin', 'superadmin')] }, async (req) => {
+    const { planId, billingCycle } = req.body as { planId: string; billingCycle: string };
+    const now = new Date();
+    const periodEnd = billingCycle === 'yearly'
+      ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const sub = await fastify.prisma.subscription.update({
+      where: { tenantId: req.user.tenantId },
+      data: { planId, billingCycle, status: 'active', currentPeriodStart: now, currentPeriodEnd: periodEnd },
+    });
+    return { success: true, data: sub };
+  });
 }

@@ -3,7 +3,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 
 const pageTitles: Record<string, string> = {
-  '/': 'Dashboard',
+  '/dashboard': 'Dashboard',
   '/leads': 'Leads',
   '/pipeline': 'Pipeline',
   '/follow-ups': 'Follow-ups',
@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   '/service-boards': 'Service Boards',
   '/users': 'Users',
   '/notifications': 'Notifications',
+  '/billing': 'Billing',
   '/settings': 'Settings',
   '/profile': 'Profile',
 }

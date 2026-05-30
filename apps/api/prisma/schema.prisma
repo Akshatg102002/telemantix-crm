@@ -12,16 +12,22 @@ datasource db {
 // ─── Tenant & Auth ─────────────────────────────────────────────────────────
 
 model Tenant {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   name         String
-  slug         String   @unique
+  slug         String    @unique
   logoUrl      String?
-  timezone     String   @default("Asia/Kolkata")
-  currency     String   @default("INR")
-  isActive     Boolean  @default(true)
-  settings     Json     @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  timezone     String    @default("Asia/Kolkata")
+  currency     String    @default("INR")
+  isActive     Boolean   @default(true)
+  settings     Json      @default("{}")
+  companySize  String?
+  industry     String?
+  website      String?
+  phone        String?
+  address      String?
+  onboardedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   users          User[]
   leads          Lead[]
@@ -35,6 +41,7 @@ model Tenant {
   channels       Channel[]
   customSections CustomSection[]
   apiKeys        ApiKey[]
+  subscription   Subscription?
 
   @@schema("public")
 }
@@ -533,5 +540,61 @@ model Channel {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Plans & Subscriptions ──────────────────────────────────────────────────
+
+model Plan {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  price       Float
+  yearlyPrice Float
+  maxUsers    Int
+  maxLeads    Int
+  features    Json     @default("[]")
+  isActive    Boolean  @default(true)
+  isPopular   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@schema("public")
+}
+
+model Subscription {
+  id                 String    @id @default(uuid())
+  tenantId           String    @unique
+  planId             String
+  status             String    @default("trial")
+  billingCycle       String    @default("monthly")
+  trialEndsAt        DateTime
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelledAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([planId])
+  @@schema("public")
+}
+
+// ─── Super Admin ─────────────────────────────────────────────────────────────
+
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
   @@schema("public")
 }
