@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AUTOMATION_TRIGGERS, AUTOMATION_ACTIONS } from '../constants';
+import { AUTOMATION_TRIGGERS } from '../constants';
 
 export const AutomationConditionSchema = z.object({
   field: z.string(),

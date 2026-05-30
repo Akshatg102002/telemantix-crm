@@ -5,7 +5,10 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'x-tenant': 'demo',
+  },
 })
 
 api.interceptors.request.use(config => {
@@ -28,7 +31,9 @@ api.interceptors.response.use(
         if (!refreshing) {
           const rt = useAuthStore.getState().refreshToken
           refreshing = axios
-            .post(`${BASE_URL}/auth/refresh`, { refreshToken: rt })
+            .post(`${BASE_URL}/auth/refresh`, { refreshToken: rt }, {
+              headers: { 'x-tenant': 'demo' },
+            })
             .then(r => {
               const { accessToken, refreshToken } = r.data.data
               useAuthStore.getState().setTokens(accessToken, refreshToken)

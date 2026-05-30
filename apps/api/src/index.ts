@@ -5,7 +5,6 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
-import fp from 'fastify-plugin';
 
 import prismaPlugin from './plugins/prisma';
 import { authRoutes } from './routes/auth';
@@ -49,21 +48,21 @@ async function bootstrap() {
 
   await fastify.register(prismaPlugin);
 
-  // Register all route groups under /api prefix
-  await fastify.register(fp(authRoutes), { prefix: '/api' });
-  await fastify.register(fp(userRoutes), { prefix: '/api' });
-  await fastify.register(fp(leadRoutes), { prefix: '/api' });
-  await fastify.register(fp(followUpRoutes), { prefix: '/api' });
-  await fastify.register(fp(automationRoutes), { prefix: '/api' });
-  await fastify.register(fp(integrationRoutes), { prefix: '/api' });
-  await fastify.register(fp(webhookRoutes), { prefix: '/api' });
-  await fastify.register(fp(analyticsRoutes), { prefix: '/api' });
-  await fastify.register(fp(notificationRoutes), { prefix: '/api' });
-  await fastify.register(fp(settingsRoutes), { prefix: '/api' });
-  await fastify.register(fp(serviceBoardRoutes), { prefix: '/api' });
-  await fastify.register(fp(publisherRoutes), { prefix: '/api' });
-  await fastify.register(fp(taskRoutes), { prefix: '/api' });
-  await fastify.register(fp(customFieldRoutes), { prefix: '/api' });
+  // Register all route groups under /api prefix (no fp() wrapper — keeps scopes isolated)
+  await fastify.register(authRoutes, { prefix: '/api' });
+  await fastify.register(userRoutes, { prefix: '/api' });
+  await fastify.register(leadRoutes, { prefix: '/api' });
+  await fastify.register(followUpRoutes, { prefix: '/api' });
+  await fastify.register(automationRoutes, { prefix: '/api' });
+  await fastify.register(integrationRoutes, { prefix: '/api' });
+  await fastify.register(webhookRoutes, { prefix: '/api' });
+  await fastify.register(analyticsRoutes, { prefix: '/api' });
+  await fastify.register(notificationRoutes, { prefix: '/api' });
+  await fastify.register(settingsRoutes, { prefix: '/api' });
+  await fastify.register(serviceBoardRoutes, { prefix: '/api' });
+  await fastify.register(publisherRoutes, { prefix: '/api' });
+  await fastify.register(taskRoutes, { prefix: '/api' });
+  await fastify.register(customFieldRoutes, { prefix: '/api' });
 
   fastify.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 
