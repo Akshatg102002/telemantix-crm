@@ -288,6 +288,23 @@ async function main() {
     }
   }
 
+  // ── Global Settings ───────────────────────────────────────────────────────
+  const globalSettings = [
+    { key: 'platform_name', value: 'Telemantix', category: 'general' },
+    { key: 'support_email', value: 'support@telemantix.io', category: 'general' },
+    { key: 'smtp_host', value: '', category: 'email' },
+    { key: 'smtp_port', value: 587, category: 'email' },
+    { key: 'maintenance_mode', value: false, category: 'system' },
+    { key: 'max_tenants', value: 1000, category: 'limits' },
+  ];
+  for (const s of globalSettings) {
+    await prisma.globalSetting.upsert({
+      where: { key: s.key },
+      update: {},
+      create: { id: randomUUID(), ...s },
+    });
+  }
+
   console.log('✅ Seed complete!');
   console.log('');
   console.log('Demo CRM credentials:');

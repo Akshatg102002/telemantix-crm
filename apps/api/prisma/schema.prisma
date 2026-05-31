@@ -19,7 +19,10 @@ model Tenant {
   timezone     String    @default("Asia/Kolkata")
   currency     String    @default("INR")
   isActive     Boolean   @default(true)
+  isArchived   Boolean   @default(false)
+  archivedAt   DateTime?
   settings     Json      @default("{}")
+  metadata     Json?
   companySize  String?
   industry     String?
   website      String?
@@ -29,35 +32,39 @@ model Tenant {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  users          User[]
-  leads          Lead[]
-  serviceBoards  ServiceBoard[]
-  leadSources    LeadSource[]
-  automations    Automation[]
-  integrations   Integration[]
-  webhookLogs    WebhookLog[]
-  notifications  Notification[]
-  publishers     Publisher[]
-  channels       Channel[]
-  customSections CustomSection[]
-  apiKeys        ApiKey[]
-  subscription   Subscription?
+  users               User[]
+  leads               Lead[]
+  serviceBoards       ServiceBoard[]
+  leadSources         LeadSource[]
+  automations         Automation[]
+  integrations        Integration[]
+  webhookLogs         WebhookLog[]
+  notifications       Notification[]
+  publishers          Publisher[]
+  channels            Channel[]
+  customSections      CustomSection[]
+  apiKeys             ApiKey[]
+  subscription        Subscription?
+  integrationSecrets  IntegrationSecret[]
 
   @@schema("public")
 }
 
 model User {
-  id           String    @id @default(uuid())
-  tenantId     String
-  name         String
-  email        String
-  passwordHash String
-  role         String    @default("agent")
-  avatarUrl    String?
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  tenantId           String
+  name               String
+  email              String
+  passwordHash       String
+  role               String    @default("agent")
+  avatarUrl          String?
+  isActive           Boolean   @default(true)
+  lastLoginAt        DateTime?
+  twoFactorEnabled   Boolean   @default(false)
+  twoFactorSecret    String?
+  preferences        Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedLeads        Lead[]         @relation("AssignedLeads")
@@ -67,6 +74,8 @@ model User {
   notifications        Notification[]
   refreshTokens        RefreshToken[]
   leadHistories        LeadHistory[]
+  loginHistory         LoginHistory[]
+  sessions             UserSession[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -546,19 +555,25 @@ model Channel {
 // ─── Plans & Subscriptions ──────────────────────────────────────────────────
 
 model Plan {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  price       Float
-  yearlyPrice Float
-  maxUsers    Int
-  maxLeads    Int
-  features    Json     @default("[]")
-  isActive    Boolean  @default(true)
-  isPopular   Boolean  @default(false)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  description     String?
+  price           Float
+  yearlyPrice     Float
+  maxUsers        Int
+  maxLeads        Int
+  maxAutomations  Int      @default(-1)
+  maxApiCalls     Int      @default(-1)
+  features        Json     @default("[]")
+  isActive        Boolean  @default(true)
+  isPopular       Boolean  @default(false)
+  isArchived      Boolean  @default(false)
+  trialDays       Int      @default(14)
+  sortOrder       Int      @default(0)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   subscriptions Subscription[]
 
@@ -678,5 +693,79 @@ model FeatureFlag {
 
   @@unique([tenantId, key])
   @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Login History & Sessions ─────────────────────────────────────────────────
+
+model LoginHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  ipAddress String?
+  userAgent String?
+  status    String   // success | failed | 2fa_required
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@schema("public")
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String
+  tenantId     String
+  refreshToken String   @unique
+  ipAddress    String?
+  userAgent    String?
+  deviceName   String?
+  expiresAt    DateTime
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+// ─── Global Settings ──────────────────────────────────────────────────────────
+
+model GlobalSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  category  String   @default("general")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@schema("public")
+}
+
+// ─── Integration Secrets (encrypted) ─────────────────────────────────────────
+
+model IntegrationSecret {
+  id             String    @id @default(uuid())
+  tenantId       String
+  provider       String
+  keyName        String
+  encryptedValue String
+  isActive       Boolean   @default(true)
+  lastTestedAt   DateTime?
+  testStatus     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider, keyName])
+  @@index([tenantId])
+  @@index([tenantId, provider])
   @@schema("public")
 }

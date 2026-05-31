@@ -18,6 +18,8 @@ const pageTitles: Record<string, string> = {
   '/users': 'Users',
   '/notifications': 'Notifications',
   '/feature-access': 'Feature Access',
+  '/security': 'Security',
+  '/tools': 'Import / Export',
   '/billing': 'Billing',
   '/settings': 'Settings',
   '/profile': 'Profile',

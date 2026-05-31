@@ -25,6 +25,9 @@ import { publicRoutes } from './routes/public';
 import { superAdminRoutes } from './routes/super-admin';
 import { contactRoutes } from './routes/contacts';
 import { whatsappRoutes } from './routes/whatsapp';
+import { securityRoutes } from './routes/security';
+import { toolsRoutes } from './routes/tools';
+import { aiRoutes } from './routes/ai';
 import { initSocket } from './lib/socket';
 
 // Start BullMQ workers
@@ -71,6 +74,9 @@ async function bootstrap() {
   await fastify.register(superAdminRoutes, { prefix: '/api' });
   await fastify.register(contactRoutes, { prefix: '/api' });
   await fastify.register(whatsappRoutes, { prefix: '/api' });
+  await fastify.register(securityRoutes, { prefix: '/api' });
+  await fastify.register(toolsRoutes, { prefix: '/api' });
+  await fastify.register(aiRoutes, { prefix: '/api' });
 
   fastify.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 

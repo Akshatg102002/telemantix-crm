@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Users, Target, Calendar, Zap, BarChart3, Plug, Settings,
   Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight,
-  CreditCard, MessageSquare, UserCircle2, Shield
+  CreditCard, MessageSquare, UserCircle2, Shield, FolderInput
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUiStore } from '../../store/ui'
@@ -48,7 +48,9 @@ const navGroups = [
     label: 'Account',
     items: [
       { label: 'Notifications', icon: Bell, href: '/notifications' },
+      { label: 'Import/Export', icon: FolderInput, href: '/tools' },
       { label: 'Feature Access', icon: Shield, href: '/feature-access' },
+      { label: 'Security', icon: Shield, href: '/security' },
       { label: 'Billing', icon: CreditCard, href: '/billing' },
       { label: 'Settings', icon: Settings, href: '/settings' },
     ],

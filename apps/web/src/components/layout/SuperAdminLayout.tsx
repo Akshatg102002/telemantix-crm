@@ -1,17 +1,48 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut, Shield, Users, BarChart3 } from 'lucide-react'
+import {
+  LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut,
+  Shield, Users, BarChart3, Flag, Activity, ScrollText
+} from 'lucide-react'
 import { useSuperAdminStore } from '../../store/superAdmin'
 import { cn } from '../../lib/utils'
 
-const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, href: '/super-admin/dashboard' },
-  { label: 'Companies', icon: Building2, href: '/super-admin/companies' },
-  { label: 'Users', icon: Users, href: '/super-admin/users' },
-  { label: 'Plans', icon: CreditCard, href: '/super-admin/plans' },
-  { label: 'Revenue', icon: DollarSign, href: '/super-admin/revenue' },
-  { label: 'Analytics', icon: BarChart3, href: '/super-admin/analytics' },
-  { label: 'Settings', icon: Settings, href: '/super-admin/settings' },
+const navGroups = [
+  {
+    label: 'Overview',
+    items: [
+      { label: 'Dashboard', icon: LayoutDashboard, href: '/super-admin/dashboard' },
+      { label: 'Analytics', icon: BarChart3, href: '/super-admin/analytics' },
+      { label: 'Revenue', icon: DollarSign, href: '/super-admin/revenue' },
+    ],
+  },
+  {
+    label: 'Companies',
+    items: [
+      { label: 'All Companies', icon: Building2, href: '/super-admin/companies' },
+      { label: 'Plans & Pricing', icon: CreditCard, href: '/super-admin/plans' },
+    ],
+  },
+  {
+    label: 'Platform',
+    items: [
+      { label: 'Users', icon: Users, href: '/super-admin/users' },
+      { label: 'Feature Flags', icon: Flag, href: '/super-admin/feature-flags' },
+    ],
+  },
+  {
+    label: 'Security',
+    items: [
+      { label: 'Audit Logs', icon: ScrollText, href: '/super-admin/audit-logs' },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { label: 'Monitoring', icon: Activity, href: '/super-admin/monitoring' },
+      { label: 'Settings', icon: Settings, href: '/super-admin/settings' },
+    ],
+  },
 ]
 
 export function SuperAdminLayout() {
@@ -19,50 +50,56 @@ export function SuperAdminLayout() {
   const navigate = useNavigate()
   const { admin, logout } = useSuperAdminStore()
 
-  const handleLogout = () => {
-    logout()
-    navigate('/super-admin/login')
-  }
+  const handleLogout = () => { logout(); navigate('/super-admin/login') }
 
   return (
     <div className="flex h-screen bg-bg overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-56 flex flex-col h-screen bg-bg-surface border-r border-danger/20 shrink-0">
+      <aside className="w-52 flex flex-col h-screen bg-bg-surface border-r border-danger/20 shrink-0">
         <div className="flex items-center gap-2.5 px-4 h-14 border-b border-danger/20">
-          <div className="h-7 w-7 rounded-lg bg-danger/10 border border-danger/30 flex items-center justify-center">
+          <div className="h-7 w-7 rounded-lg bg-danger/10 border border-danger/30 flex items-center justify-center shrink-0">
             <Shield className="h-3.5 w-3.5 text-danger" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-heading font-bold text-text-primary">Super Admin</p>
             <p className="text-[10px] text-danger">Restricted Access</p>
           </div>
         </div>
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {navItems.map(item => {
-            const active = pathname === item.href
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all',
-                  active ? 'bg-danger/10 text-danger' : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated',
-                )}
-              >
-                <item.icon className={cn('h-3.5 w-3.5', active ? 'text-danger' : 'text-text-muted')} />
-                {item.label}
-              </Link>
-            )
-          })}
+
+        <nav className="flex-1 py-3 px-2 space-y-4 overflow-y-auto">
+          {navGroups.map(group => (
+            <div key={group.label}>
+              <p className="px-2.5 mb-1 text-[9px] font-semibold uppercase tracking-wider text-text-muted">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.items.map(item => {
+                  const active = pathname === item.href
+                  return (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      className={cn(
+                        'flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all',
+                        active ? 'bg-danger/10 text-danger' : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated',
+                      )}
+                    >
+                      <item.icon className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-danger' : 'text-text-muted')} />
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
+
         <div className="p-3 border-t border-danger/20">
           <div className="flex items-center gap-2 text-xs mb-2">
-            <div className="h-6 w-6 rounded-full bg-danger/20 flex items-center justify-center text-danger font-bold text-[10px]">
+            <div className="h-6 w-6 rounded-full bg-danger/20 flex items-center justify-center text-danger font-bold text-[10px] shrink-0">
               {admin?.name?.[0] || 'S'}
             </div>
             <div className="min-w-0">
               <p className="text-text-primary font-medium truncate">{admin?.name}</p>
-              <p className="text-text-muted truncate">{admin?.email}</p>
+              <p className="text-text-muted truncate text-[10px]">{admin?.email}</p>
             </div>
           </div>
           <button

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { CheckCircle, XCircle, Settings, ExternalLink, Copy } from 'lucide-react'
+import { BRAND_ICONS } from '../assets/brands'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIntegrations } from '../hooks/useApi'
 import { Card, CardContent } from '../components/ui/card'
@@ -86,8 +87,8 @@ export function IntegrationsPage() {
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: cfg.color }}>
-                        {cfg.name[0]}
+                      <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden bg-bg-elevated border border-border">
+                        {(() => { const Icon = BRAND_ICONS[cfg.type]; return Icon ? <Icon size={28} /> : <div className="text-white font-bold text-sm w-10 h-10 flex items-center justify-center rounded-lg" style={{ background: cfg.color }}>{cfg.name[0]}</div> })()}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-text-primary">{cfg.name}</p>

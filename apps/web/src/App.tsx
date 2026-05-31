@@ -8,7 +8,7 @@ import { LandingPage } from './pages/public/LandingPage'
 import { SignupPage } from './pages/public/SignupPage'
 import { LoginPage } from './pages/LoginPage'
 
-// Authenticated CRM
+// CRM
 import { DashboardPage } from './pages/DashboardPage'
 import { LeadsPage } from './pages/LeadsPage'
 import { LeadDetailPage } from './pages/LeadDetailPage'
@@ -27,8 +27,10 @@ import { BillingPage } from './pages/BillingPage'
 import { ContactsPage } from './pages/ContactsPage'
 import { WhatsAppCampaignsPage } from './pages/WhatsAppCampaignsPage'
 import { FeatureAccessPage } from './pages/FeatureAccessPage'
+import { SecurityPage } from './pages/SecurityPage'
+import { ImportExportPage } from './pages/ImportExportPage'
 
-// Super admin
+// Super Admin
 import { SuperAdminLogin } from './pages/super-admin/SuperAdminLogin'
 import { SuperAdminDashboard } from './pages/super-admin/SuperAdminDashboard'
 import { SuperAdminCompanies } from './pages/super-admin/SuperAdminCompanies'
@@ -37,6 +39,9 @@ import { SuperAdminRevenue } from './pages/super-admin/SuperAdminRevenue'
 import { SuperAdminSettings } from './pages/super-admin/SuperAdminSettings'
 import { SuperAdminAnalytics } from './pages/super-admin/SuperAdminAnalytics'
 import { SuperAdminUsers } from './pages/super-admin/SuperAdminUsers'
+import { SuperAdminFeatureFlags } from './pages/super-admin/SuperAdminFeatureFlags'
+import { SuperAdminMonitoring } from './pages/super-admin/SuperAdminMonitoring'
+import { SuperAdminAuditLogs } from './pages/super-admin/SuperAdminAuditLogs'
 
 import { ToastProvider } from './components/ui/toast'
 import { useAuthStore } from './store/auth'
@@ -98,6 +103,8 @@ export default function App() {
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/feature-access" element={<FeatureAccessPage />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/security" element={<SecurityPage />} />
+          <Route path="/tools" element={<ImportExportPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
@@ -111,6 +118,9 @@ export default function App() {
           <Route path="plans" element={<SuperAdminPlans />} />
           <Route path="revenue" element={<SuperAdminRevenue />} />
           <Route path="analytics" element={<SuperAdminAnalytics />} />
+          <Route path="feature-flags" element={<SuperAdminFeatureFlags />} />
+          <Route path="audit-logs" element={<SuperAdminAuditLogs />} />
+          <Route path="monitoring" element={<SuperAdminMonitoring />} />
           <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
 
