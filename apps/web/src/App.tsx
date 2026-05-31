@@ -3,12 +3,12 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
 import { SuperAdminLayout } from './components/layout/SuperAdminLayout'
 
-// Public pages
+// Public
 import { LandingPage } from './pages/public/LandingPage'
 import { SignupPage } from './pages/public/SignupPage'
 import { LoginPage } from './pages/LoginPage'
 
-// Authenticated CRM pages
+// Authenticated CRM
 import { DashboardPage } from './pages/DashboardPage'
 import { LeadsPage } from './pages/LeadsPage'
 import { LeadDetailPage } from './pages/LeadDetailPage'
@@ -24,19 +24,25 @@ import { NotificationsPage } from './pages/NotificationsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { PipelinePage } from './pages/PipelinePage'
 import { BillingPage } from './pages/BillingPage'
+import { ContactsPage } from './pages/ContactsPage'
+import { WhatsAppCampaignsPage } from './pages/WhatsAppCampaignsPage'
+import { FeatureAccessPage } from './pages/FeatureAccessPage'
 
-// Super admin pages
+// Super admin
 import { SuperAdminLogin } from './pages/super-admin/SuperAdminLogin'
 import { SuperAdminDashboard } from './pages/super-admin/SuperAdminDashboard'
 import { SuperAdminCompanies } from './pages/super-admin/SuperAdminCompanies'
 import { SuperAdminPlans } from './pages/super-admin/SuperAdminPlans'
 import { SuperAdminRevenue } from './pages/super-admin/SuperAdminRevenue'
 import { SuperAdminSettings } from './pages/super-admin/SuperAdminSettings'
+import { SuperAdminAnalytics } from './pages/super-admin/SuperAdminAnalytics'
+import { SuperAdminUsers } from './pages/super-admin/SuperAdminUsers'
 
 import { ToastProvider } from './components/ui/toast'
 import { useAuthStore } from './store/auth'
 import { useSuperAdminStore } from './store/superAdmin'
 import { connectSocket, disconnectSocket } from './lib/socket'
+import { useThemeStore } from './store/theme'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore(s => s.accessToken)
@@ -52,6 +58,11 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const accessToken = useAuthStore(s => s.accessToken)
+  const { theme } = useThemeStore()
+
+  useEffect(() => {
+    document.documentElement.className = theme
+  }, [theme])
 
   useEffect(() => {
     if (accessToken) connectSocket()
@@ -61,40 +72,45 @@ export default function App() {
   return (
     <ToastProvider>
       <Routes>
-        {/* ── Public routes ── */}
+        {/* ── Public ── */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/login" element={<LoginPage />} />
 
-        {/* ── Authenticated CRM app ── */}
+        {/* ── Authenticated CRM ── */}
         <Route path="/dashboard" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<DashboardPage />} />
         </Route>
-        <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
-          <Route path="leads" element={<LeadsPage />} />
-          <Route path="leads/:id" element={<LeadDetailPage />} />
-          <Route path="pipeline" element={<PipelinePage />} />
-          <Route path="follow-ups" element={<FollowUpsPage />} />
-          <Route path="tasks" element={<TasksPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="automation" element={<AutomationPage />} />
-          <Route path="integrations" element={<IntegrationsPage />} />
-          <Route path="publishers" element={<PublishersPage />} />
-          <Route path="service-boards" element={<ServiceBoardsPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="billing" element={<BillingPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+        <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+          <Route path="/leads" element={<LeadsPage />} />
+          <Route path="/leads/:id" element={<LeadDetailPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/pipeline" element={<PipelinePage />} />
+          <Route path="/follow-ups" element={<FollowUpsPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/whatsapp-campaigns" element={<WhatsAppCampaignsPage />} />
+          <Route path="/automation" element={<AutomationPage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
+          <Route path="/publishers" element={<PublishersPage />} />
+          <Route path="/service-boards" element={<ServiceBoardsPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/feature-access" element={<FeatureAccessPage />} />
+          <Route path="/billing" element={<BillingPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
-        {/* ── Super admin routes ── */}
+        {/* ── Super Admin ── */}
         <Route path="/super-admin/login" element={<SuperAdminLogin />} />
         <Route path="/super-admin" element={<RequireSuperAdmin><SuperAdminLayout /></RequireSuperAdmin>}>
           <Route index element={<Navigate to="/super-admin/dashboard" replace />} />
           <Route path="dashboard" element={<SuperAdminDashboard />} />
           <Route path="companies" element={<SuperAdminCompanies />} />
+          <Route path="users" element={<SuperAdminUsers />} />
           <Route path="plans" element={<SuperAdminPlans />} />
           <Route path="revenue" element={<SuperAdminRevenue />} />
+          <Route path="analytics" element={<SuperAdminAnalytics />} />
           <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
 

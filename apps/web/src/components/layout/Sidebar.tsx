@@ -2,34 +2,66 @@ import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Users, Target, Calendar, Zap, BarChart3, Plug, Settings,
-  Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight, CreditCard
+  Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight,
+  CreditCard, MessageSquare, UserCircle2, Shield
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUiStore } from '../../store/ui'
 import { useAuthStore } from '../../store/auth'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '../ui/tooltip'
 
-const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Leads', icon: Target, href: '/leads' },
-  { label: 'Pipeline', icon: FolderKanban, href: '/pipeline' },
-  { label: 'Follow-ups', icon: Calendar, href: '/follow-ups' },
-  { label: 'Tasks', icon: CheckSquare, href: '/tasks' },
-  { label: 'Analytics', icon: BarChart3, href: '/analytics' },
-  { label: 'Automation', icon: Zap, href: '/automation' },
-  { label: 'Integrations', icon: Plug, href: '/integrations' },
-  { label: 'Publishers', icon: Globe, href: '/publishers' },
-  { label: 'Service Boards', icon: BookOpen, href: '/service-boards' },
-  { label: 'Users', icon: Users, href: '/users' },
-  { label: 'Notifications', icon: Bell, href: '/notifications' },
-  { label: 'Billing', icon: CreditCard, href: '/billing' },
-  { label: 'Settings', icon: Settings, href: '/settings' },
+const navGroups = [
+  {
+    label: 'CRM',
+    items: [
+      { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+      { label: 'Leads', icon: Target, href: '/leads' },
+      { label: 'Contacts', icon: UserCircle2, href: '/contacts' },
+      { label: 'Pipeline', icon: FolderKanban, href: '/pipeline' },
+      { label: 'Follow-ups', icon: Calendar, href: '/follow-ups' },
+      { label: 'Tasks', icon: CheckSquare, href: '/tasks' },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      { label: 'WA Campaigns', icon: MessageSquare, href: '/whatsapp-campaigns' },
+      { label: 'Automation', icon: Zap, href: '/automation' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { label: 'Analytics', icon: BarChart3, href: '/analytics' },
+    ],
+  },
+  {
+    label: 'Platform',
+    items: [
+      { label: 'Integrations', icon: Plug, href: '/integrations' },
+      { label: 'Service Boards', icon: BookOpen, href: '/service-boards' },
+      { label: 'Publishers', icon: Globe, href: '/publishers' },
+      { label: 'Users', icon: Users, href: '/users' },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { label: 'Notifications', icon: Bell, href: '/notifications' },
+      { label: 'Feature Access', icon: Shield, href: '/feature-access' },
+      { label: 'Billing', icon: CreditCard, href: '/billing' },
+      { label: 'Settings', icon: Settings, href: '/settings' },
+    ],
+  },
 ]
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUiStore()
   const { pathname } = useLocation()
   const user = useAuthStore(s => s.user)
+
+  const isActive = (href: string) =>
+    href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href)
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -58,41 +90,61 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map(item => {
-            const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
-            return (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>
-                  <Link
-                    to={item.href}
-                    className={cn(
-                      'flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 group',
-                      active
-                        ? 'bg-brand-purple/15 text-brand-purple font-medium'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated',
-                    )}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+          {navGroups.map(group => (
+            <div key={group.label}>
+              <AnimatePresence>
+                {!sidebarCollapsed && (
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="px-2.5 mb-1 text-[9px] font-semibold uppercase tracking-wider text-text-muted"
                   >
-                    <item.icon className={cn('h-4 w-4 shrink-0', active ? 'text-brand-purple' : 'text-text-muted group-hover:text-text-secondary')} />
-                    <AnimatePresence>
-                      {!sidebarCollapsed && (
-                        <motion.span
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="whitespace-nowrap overflow-hidden"
+                    {group.label}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+              <div className="space-y-0.5">
+                {group.items.map(item => {
+                  const active = isActive(item.href)
+                  return (
+                    <Tooltip key={item.href}>
+                      <TooltipTrigger asChild>
+                        <Link
+                          to={item.href}
+                          className={cn(
+                            'relative flex items-center gap-3 px-2.5 py-2 rounded-lg text-xs transition-all duration-150 group',
+                            active
+                              ? 'bg-brand-purple/15 text-brand-purple font-medium'
+                              : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated',
+                          )}
                         >
-                          {item.label}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                    {active && <motion.div layoutId="activeNav" className="absolute left-0 w-0.5 h-6 bg-brand-purple rounded-r" />}
-                  </Link>
-                </TooltipTrigger>
-                {sidebarCollapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
-              </Tooltip>
-            )
-          })}
+                          <item.icon className={cn('h-4 w-4 shrink-0', active ? 'text-brand-purple' : 'text-text-muted group-hover:text-text-secondary')} />
+                          <AnimatePresence>
+                            {!sidebarCollapsed && (
+                              <motion.span
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="whitespace-nowrap overflow-hidden"
+                              >
+                                {item.label}
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                          {active && (
+                            <motion.div layoutId="activeNav" className="absolute left-0 w-0.5 h-5 bg-brand-purple rounded-r" />
+                          )}
+                        </Link>
+                      </TooltipTrigger>
+                      {sidebarCollapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
+                    </Tooltip>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* User */}

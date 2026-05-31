@@ -598,3 +598,85 @@ model SuperAdmin {
 
   @@schema("public")
 }
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@schema("public")
+}
+
+// ─── WhatsApp Campaigns ──────────────────────────────────────────────────────
+
+model WhatsAppCampaign {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  template    String
+  message     String
+  status      String    @default("draft")
+  scheduledAt DateTime?
+  sentCount   Int       @default(0)
+  deliveredCount Int    @default(0)
+  readCount   Int       @default(0)
+  failedCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@schema("public")
+}
+
+// ─── Contacts (People/Contacts separate from leads) ──────────────────────────
+
+model Contact {
+  id         String    @id @default(uuid())
+  tenantId   String
+  name       String
+  phone      String?
+  email      String?
+  company    String?
+  tags       Json      @default("[]")
+  customData Json      @default("{}")
+  isActive   Boolean   @default(true)
+  lastContactedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([tenantId, email])
+  @@schema("public")
+}
+
+// ─── Feature Flags (per tenant overrides) ────────────────────────────────────
+
+model FeatureFlag {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  key       String
+  value     Boolean  @default(true)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@schema("public")
+}

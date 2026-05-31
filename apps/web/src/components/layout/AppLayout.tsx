@@ -5,20 +5,24 @@ import { Header } from './Header'
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/leads': 'Leads',
+  '/contacts': 'People & Contacts',
   '/pipeline': 'Pipeline',
   '/follow-ups': 'Follow-ups',
   '/tasks': 'Tasks',
   '/analytics': 'Analytics',
+  '/whatsapp-campaigns': 'WhatsApp Campaigns',
   '/automation': 'Automation',
   '/integrations': 'Integrations',
   '/publishers': 'Publishers',
   '/service-boards': 'Service Boards',
   '/users': 'Users',
   '/notifications': 'Notifications',
+  '/feature-access': 'Feature Access',
   '/billing': 'Billing',
   '/settings': 'Settings',
   '/profile': 'Profile',
 }
+
 
 export function AppLayout() {
   const { pathname } = useLocation()

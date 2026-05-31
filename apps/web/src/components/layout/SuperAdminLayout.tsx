@@ -1,14 +1,16 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut, Shield } from 'lucide-react'
+import { LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut, Shield, Users, BarChart3 } from 'lucide-react'
 import { useSuperAdminStore } from '../../store/superAdmin'
 import { cn } from '../../lib/utils'
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/super-admin/dashboard' },
   { label: 'Companies', icon: Building2, href: '/super-admin/companies' },
+  { label: 'Users', icon: Users, href: '/super-admin/users' },
   { label: 'Plans', icon: CreditCard, href: '/super-admin/plans' },
   { label: 'Revenue', icon: DollarSign, href: '/super-admin/revenue' },
+  { label: 'Analytics', icon: BarChart3, href: '/super-admin/analytics' },
   { label: 'Settings', icon: Settings, href: '/super-admin/settings' },
 ]
 

@@ -1,4 +1,5 @@
 import { Bell, Search, Plus, LogOut, User, Settings } from 'lucide-react'
+import { ThemeToggle } from '../ui/ThemeToggle'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
 import { useNotifStore } from '../../store/notifications'
@@ -28,6 +29,7 @@ export function Header({ title }: { title?: string }) {
         <Input icon={<Search className="h-3.5 w-3.5" />} placeholder="Search leads, contacts..." className="h-8 text-xs" />
       </div>
       <div className="flex items-center gap-2 ml-4">
+        <ThemeToggle />
         <Button size="sm" className="gap-1.5 text-xs" onClick={() => navigate('/leads?new=1')}>
           <Plus className="h-3.5 w-3.5" /> Add Lead
         </Button>

@@ -3,53 +3,85 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 0 0% 5%;
-    --foreground: 0 0% 96%;
-    --card: 240 4% 9%;
-    --card-foreground: 0 0% 96%;
-    --popover: 240 4% 9%;
-    --popover-foreground: 0 0% 96%;
-    --primary: 271 60% 46%;
-    --primary-foreground: 0 0% 96%;
-    --secondary: 240 4% 13%;
-    --secondary-foreground: 0 0% 96%;
-    --muted: 240 4% 13%;
-    --muted-foreground: 240 5% 60%;
-    --accent: 21 79% 54%;
-    --accent-foreground: 0 0% 96%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 96%;
-    --border: 240 4% 18%;
-    --input: 240 4% 18%;
-    --ring: 271 60% 46%;
-    --radius: 0.625rem;
+  /* ── Dark theme (default) ─────────────────────────────────────────────── */
+  :root, .dark {
+    --bg: #0D0D0F;
+    --bg-surface: #16161A;
+    --bg-elevated: #1C1C22;
+    --text-primary: #F5F5F7;
+    --text-secondary: #8A8A99;
+    --text-muted: #5A5A69;
+    --border: #2A2A2F;
+    --border-subtle: #1E1E24;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(42,42,47,0.6);
+    --glass-bg: rgba(22, 22, 26, 0.85);
+    --scrollbar-track: #0D0D0F;
+    --scrollbar-thumb: #2A2A2F;
+  }
+
+  /* ── Light theme ──────────────────────────────────────────────────────── */
+  .light {
+    --bg: #F8F8FC;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #F2F2F8;
+    --text-primary: #111118;
+    --text-secondary: #555563;
+    --text-muted: #9999AA;
+    --border: #E2E2EA;
+    --border-subtle: #EBEBF2;
+    --shadow-card: 0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(226,226,234,0.8);
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --scrollbar-track: #F8F8FC;
+    --scrollbar-thumb: #D0D0DD;
   }
 
   * { @apply border-border; }
   html { @apply scroll-smooth; }
+
   body {
-    @apply bg-bg text-text-primary font-sans antialiased;
+    background-color: var(--bg);
+    color: var(--text-primary);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .dark body {
     background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(123,47,190,0.08), transparent);
   }
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-bg; }
-  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-brand-purple/60; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(123,47,190,0.5); }
 
-  ::selection { @apply bg-brand-purple/30 text-text-primary; }
+  ::selection { background: rgba(123,47,190,0.25); color: var(--text-primary); }
 }
 
+/* ── Dynamic CSS custom properties mapped to Tailwind ──────────────────────── */
 @layer utilities {
+  .bg-bg { background-color: var(--bg) !important; }
+  .bg-bg-surface { background-color: var(--bg-surface) !important; }
+  .bg-bg-elevated { background-color: var(--bg-elevated) !important; }
+  .text-text-primary { color: var(--text-primary) !important; }
+  .text-text-secondary { color: var(--text-secondary) !important; }
+  .text-text-muted { color: var(--text-muted) !important; }
+  .border-border { border-color: var(--border) !important; }
+  .shadow-card { box-shadow: var(--shadow-card) !important; }
+
   .gradient-text {
-    @apply bg-brand-gradient bg-clip-text text-transparent;
+    background: linear-gradient(135deg, #7B2FBE 0%, #C43E8A 50%, #E8622A 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
   }
+
   .glass {
-    background: rgba(22, 22, 26, 0.8);
+    background: var(--glass-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
+
   .gradient-border {
     position: relative;
   }
@@ -66,6 +98,7 @@
     mask-composite: exclude;
     pointer-events: none;
   }
+
   .shimmer-btn {
     background-size: 200% 100%;
     animation: shimmer 2s linear infinite;
