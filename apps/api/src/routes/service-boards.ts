@@ -6,8 +6,9 @@ export async function serviceBoardRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/service-boards', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const boards = await fastify.prisma.serviceBoard.findMany({
-      where: { tenantId: req.user.tenantId, isActive: true },
+      where: { tenantId: user.tenantId, isActive: true },
       include: {
         statuses: { include: { subStatuses: true }, orderBy: { sortOrder: 'asc' } },
         _count: { select: { leads: true } },
@@ -18,9 +19,10 @@ export async function serviceBoardRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/service-boards', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = req.body as Record<string, unknown>;
     const board = await fastify.prisma.serviceBoard.create({
-      data: { id: randomUUID(), tenantId: req.user.tenantId, name: body.name as string, description: body.description as string, color: (body.color as string) || '#7B2FBE' },
+      data: { id: randomUUID(), tenantId: user.tenantId, name: body.name as string, description: body.description as string, color: (body.color as string) || '#7B2FBE' },
     });
     reply.code(201);
     return { success: true, data: board };
@@ -35,10 +37,11 @@ export async function serviceBoardRoutes(fastify: FastifyInstance) {
 
   // Status CRUD
   fastify.post('/service-boards/:boardId/statuses', { preHandler: [requireRole('admin', 'superadmin', 'manager')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { boardId } = req.params as { boardId: string };
     const body = req.body as Record<string, unknown>;
     const status = await fastify.prisma.status.create({
-      data: { id: randomUUID(), tenantId: req.user.tenantId, serviceBoardId: boardId, name: body.name as string, color: (body.color as string) || '#8A8A99', sortOrder: (body.sortOrder as number) || 0 },
+      data: { id: randomUUID(), tenantId: user.tenantId, serviceBoardId: boardId, name: body.name as string, color: (body.color as string) || '#8A8A99', sortOrder: (body.sortOrder as number) || 0 },
     });
     reply.code(201);
     return { success: true, data: status };

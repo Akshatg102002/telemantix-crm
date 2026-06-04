@@ -37,10 +37,11 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/auth/me', { preHandler: [requireAuth] }, async (req) => {
-    const user = await fastify.prisma.user.findUnique({
-      where: { id: req.user.sub },
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
+    const currentUser = await fastify.prisma.user.findUnique({
+      where: { id: user.sub },
       select: { id: true, name: true, email: true, role: true, avatarUrl: true, tenantId: true, lastLoginAt: true },
     });
-    return { success: true, data: user };
+    return { success: true, data: currentUser };
   });
 }

@@ -5,13 +5,14 @@ export async function notificationRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/notifications', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const q = req.query as Record<string, string>;
     const notifications = await fastify.prisma.notification.findMany({
-      where: { userId: req.user.sub, tenantId: req.user.tenantId, ...(q.unread === 'true' ? { isRead: false } : {}) },
+      where: { userId: user.sub, tenantId: user.tenantId, ...(q.unread === 'true' ? { isRead: false } : {}) },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
-    const unreadCount = await fastify.prisma.notification.count({ where: { userId: req.user.sub, tenantId: req.user.tenantId, isRead: false } });
+    const unreadCount = await fastify.prisma.notification.count({ where: { userId: user.sub, tenantId: user.tenantId, isRead: false } });
     return { success: true, data: notifications, meta: { unreadCount } };
   });
 
@@ -22,8 +23,9 @@ export async function notificationRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/notifications/read-all', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     await fastify.prisma.notification.updateMany({
-      where: { userId: req.user.sub, tenantId: req.user.tenantId, isRead: false },
+      where: { userId: user.sub, tenantId: user.tenantId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
     return { success: true, data: null };

@@ -27,7 +27,7 @@ export async function writeAuditLog(
         action: opts.action,
         resource: opts.resource,
         resourceId: opts.resourceId,
-        metadata: opts.metadata,
+        metadata: opts.metadata as any,
         ipAddress: opts.ipAddress,
         userAgent: opts.userAgent,
       },

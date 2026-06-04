@@ -12,10 +12,11 @@ export async function toolsRoutes(fastify: FastifyInstance) {
 
   // ── Import ─────────────────────────────────────────────────────────────────
   fastify.post('/tools/import/leads', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     // In production: use @fastify/multipart to read CSV, parse fields, queue BullMQ job
     // For now: return a mock job ID that the frontend can poll
     const jobId = randomUUID();
-    fastify.log.info({ jobId, tenantId: req.user.tenantId }, 'Lead import queued');
+    fastify.log.info({ jobId, tenantId: user.tenantId }, 'Lead import queued');
     reply.code(202);
     return {
       success: true,
@@ -51,6 +52,7 @@ export async function toolsRoutes(fastify: FastifyInstance) {
 
   // ── Export ─────────────────────────────────────────────────────────────────
   fastify.post('/tools/export', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = req.body as {
       entity: string;
       fields: string[];
@@ -60,7 +62,7 @@ export async function toolsRoutes(fastify: FastifyInstance) {
 
     if (body.entity === 'leads') {
       const leads = await fastify.prisma.lead.findMany({
-        where: { tenantId: req.user.tenantId },
+        where: { tenantId: user.tenantId },
         include: {
           source: true, status: true, assignedUser: { select: { name: true } },
         },

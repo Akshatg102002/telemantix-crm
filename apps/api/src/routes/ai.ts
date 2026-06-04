@@ -36,12 +36,13 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   // ── Email Generation ───────────────────────────────────────────────────────
   fastify.post('/ai/generate-email', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { leadId, goal, tone } = req.body as { leadId?: string; goal: string; tone?: string };
 
     let lead: { name: string } | null = null;
     if (leadId) {
       lead = await fastify.prisma.lead.findFirst({
-        where: { id: leadId, tenantId: req.user.tenantId },
+        where: { id: leadId, tenantId: user.tenantId },
         select: { name: true },
       });
     }
@@ -98,7 +99,8 @@ Telemantix Team`;
 
   // ── Analytics Insights ─────────────────────────────────────────────────────
   fastify.get('/ai/insights', async (req) => {
-    const tenantId = req.user.tenantId;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
+    const tenantId = user.tenantId;
 
     // Get real data to generate insights
     const [totalLeads, leadsThisWeek, leadsPastWeek] = await Promise.all([
@@ -122,9 +124,10 @@ Telemantix Team`;
 
   // ── Lead Score Explanation ─────────────────────────────────────────────────
   fastify.get('/ai/lead-score/:leadId', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { leadId } = req.params as { leadId: string };
     const lead = await fastify.prisma.lead.findFirst({
-      where: { id: leadId, tenantId: req.user.tenantId },
+      where: { id: leadId, tenantId: user.tenantId },
       include: { source: true, status: true, followUps: { take: 5 } },
     });
     if (!lead) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Lead not found' } });

@@ -17,13 +17,3 @@ export function requireRole(...roles: Role[]) {
     }
   };
 }
-
-declare module 'fastify' {
-  interface FastifyRequest {
-    user: {
-      sub: string;
-      tenantId: string;
-      role: Role;
-    };
-  }
-}

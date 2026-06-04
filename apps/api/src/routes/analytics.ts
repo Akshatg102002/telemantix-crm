@@ -5,7 +5,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/analytics/overview', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -49,7 +49,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/lead-funnel', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const statuses = await fastify.prisma.status.findMany({ where: { serviceBoard: { tenantId } } });
     const funnel = await Promise.all(
@@ -62,7 +62,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/source-breakdown', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const sources = await fastify.prisma.leadSource.findMany({ where: { tenantId } });
     const breakdown = await Promise.all(
@@ -76,7 +76,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/agent-performance', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const agents = await fastify.prisma.user.findMany({ where: { tenantId, role: 'agent', isActive: true } });
     const performance = await Promise.all(
@@ -92,7 +92,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/conversion-trends', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const data = await fastify.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
       SELECT DATE_TRUNC('day', "createdAt")::date as date, COUNT(*) as count
@@ -106,7 +106,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/activity', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const history = await fastify.prisma.leadHistory.findMany({
       where: { tenantId },
@@ -118,7 +118,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/funnel', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const statuses = await fastify.prisma.status.findMany({ where: { serviceBoard: { tenantId } }, orderBy: { sortOrder: 'asc' } });
     const funnel = await Promise.all(
@@ -131,7 +131,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/analytics/agents', async (req) => {
-    const user = req.user as any;
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const tenantId = user.tenantId;
     const agents = await fastify.prisma.user.findMany({ where: { tenantId, isActive: true } });
     const data = await Promise.all(agents.map(async a => ({
