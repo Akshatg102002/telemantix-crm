@@ -34,7 +34,7 @@ export function LoginPage() {
       const res = await api.post('/auth/login', data)
       const { user, tenant, accessToken, refreshToken } = res.data.data
       setAuth(user, tenant, accessToken, refreshToken)
-      navigate('/')
+      navigate('/dashboard')
     } catch {
       toastError('Invalid credentials', 'Please check your email and password')
     } finally {

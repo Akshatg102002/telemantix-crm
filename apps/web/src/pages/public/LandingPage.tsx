@@ -54,7 +54,7 @@ function Navbar() {
           <div className="h-8 w-8 rounded-lg bg-brand-gradient flex items-center justify-center">
             <Zap className="h-4 w-4 text-white" />
           </div>
-          <span className="font-heading font-bold text-text-primary text-lg">Telemantix</span>
+          <span className="font-heading font-bold text-text-primary text-lg">TELEMANTIX</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-8 text-sm">
@@ -528,9 +528,9 @@ function Footer() {
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-3">
               <div className="h-7 w-7 rounded-lg bg-brand-gradient flex items-center justify-center"><Zap className="h-3.5 w-3.5 text-white" /></div>
-              <span className="font-heading font-bold text-text-primary">Telemantix</span>
+              <span className="font-heading font-bold text-text-primary">TELEMANTIX</span>
             </div>
-            <p className="text-text-muted text-xs leading-relaxed">The CRM for modern Indian sales teams. Built for speed, scale, and automation.</p>
+            <p className="text-text-muted text-xs leading-relaxed">The CRM for modern sales teams. Built for speed, scale, and automation.</p>
           </div>
           {[
             { heading: 'Product', links: ['Features', 'Pricing', 'Integrations', 'Changelog'] },
@@ -546,7 +546,7 @@ function Footer() {
           ))}
         </div>
         <div className="flex items-center justify-between border-t border-border pt-6 text-xs text-text-muted">
-          <span>© 2025 Telemantix. All rights reserved.</span>
+          <span>© 2026 Telemantix. All rights reserved.</span>
           <Link to="/super-admin/login" className="hover:text-text-secondary transition-colors">Admin</Link>
         </div>
       </div>
