@@ -10,15 +10,17 @@ export async function leadRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/leads', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const filters = LeadFilterSchema.parse(req.query);
-    const result = await leadService.list(req.user.tenantId, filters);
+    const result = await leadService.list(user.tenantId, filters);
     return { success: true, data: result.leads, meta: result.meta };
   });
 
   fastify.get('/leads/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     try {
-      const lead = await leadService.findById(req.user.tenantId, id);
+      const lead = await leadService.findById(user.tenantId, id);
       return { success: true, data: lead };
     } catch {
       return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Lead not found' } });
@@ -26,19 +28,21 @@ export async function leadRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/leads', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = CreateLeadSchema.parse(req.body);
-    const lead = await leadService.create(req.user.tenantId, req.user.sub, body);
-    await runAutomations(req.user.tenantId, 'lead_created', lead.id);
+    const lead = await leadService.create(user.tenantId, user.sub, body);
+    await runAutomations(user.tenantId, 'lead_created', lead.id);
     reply.code(201);
     return { success: true, data: lead };
   });
 
   fastify.patch('/leads/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     const body = UpdateLeadSchema.parse(req.body);
     try {
-      const lead = await leadService.update(req.user.tenantId, id, req.user.sub, body);
-      if (body.statusId) await runAutomations(req.user.tenantId, 'status_changed', id, { newStatusId: body.statusId });
+      const lead = await leadService.update(user.tenantId, id, user.sub, body);
+      if (body.statusId) await runAutomations(user.tenantId, 'status_changed', id, { newStatusId: body.statusId });
       return { success: true, data: lead };
     } catch {
       return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Lead not found' } });
@@ -46,15 +50,17 @@ export async function leadRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/leads/bulk', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = BulkLeadActionSchema.parse(req.body);
-    const result = await leadService.bulkAction(req.user.tenantId, req.user.sub, body);
+    const result = await leadService.bulkAction(user.tenantId, user.sub, body);
     return { success: true, data: result };
   });
 
   fastify.get('/leads/:id/history', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     const history = await fastify.prisma.leadHistory.findMany({
-      where: { leadId: id, tenantId: req.user.tenantId },
+      where: { leadId: id, tenantId: user.tenantId },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -62,15 +68,17 @@ export async function leadRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/leads/:id/score', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
-    const score = await leadService.computeScore(req.user.tenantId, id);
+    const score = await leadService.computeScore(user.tenantId, id);
     return { success: true, data: { score } };
   });
 
   // Pipeline view: leads grouped by status
   fastify.get('/leads/pipeline', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { serviceBoardId } = req.query as { serviceBoardId?: string };
-    const tenantId = req.user.tenantId;
+    const tenantId = user.tenantId;
 
     const statuses = await fastify.prisma.status.findMany({
       where: { serviceBoard: { tenantId, ...(serviceBoardId ? { id: serviceBoardId } : {}) } },
@@ -87,9 +95,10 @@ export async function leadRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/leads/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     try {
-      await fastify.prisma.lead.delete({ where: { id, tenantId: req.user.tenantId } });
+      await fastify.prisma.lead.delete({ where: { id, tenantId: user.tenantId } });
       return { success: true, data: null };
     } catch {
       return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Lead not found' } });

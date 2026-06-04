@@ -28,7 +28,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         integrationId: integration.id,
         direction: 'inbound',
         source: integration.type,
-        requestBody: body,
+        requestBody: body as any,
       },
     });
 
@@ -96,7 +96,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
           if (!integration) continue;
 
           await fastify.prisma.webhookLog.create({
-            data: { id: randomUUID(), tenantId: integration.tenantId, integrationId: integration.id, direction: 'inbound', source: 'meta_ads', requestBody: val },
+            data: { id: randomUUID(), tenantId: integration.tenantId, integrationId: integration.id, direction: 'inbound', source: 'meta_ads', requestBody: val as any },
           });
         }
       }

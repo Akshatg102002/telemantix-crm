@@ -6,19 +6,21 @@ export async function publisherRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/publishers', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const publishers = await fastify.prisma.publisher.findMany({
-      where: { tenantId: req.user.tenantId },
+      where: { tenantId: user.tenantId },
       include: { _count: { select: { leads: true } } },
     });
     return { success: true, data: publishers };
   });
 
   fastify.post('/publishers', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = req.body as Record<string, unknown>;
     const publisher = await fastify.prisma.publisher.create({
       data: {
         id: randomUUID(),
-        tenantId: req.user.tenantId,
+        tenantId: user.tenantId,
         name: body.name as string,
         company: body.company as string,
         email: body.email as string,
@@ -31,9 +33,10 @@ export async function publisherRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/publishers/:id/leads', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     const leads = await fastify.prisma.lead.findMany({
-      where: { publisherId: id, tenantId: req.user.tenantId },
+      where: { publisherId: id, tenantId: user.tenantId },
       include: { status: true },
       orderBy: { createdAt: 'desc' },
       take: 100,

@@ -7,19 +7,21 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
 
   // ── Campaigns ──────────────────────────────────────────────────────────────
   fastify.get('/whatsapp/campaigns', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const campaigns = await fastify.prisma.whatsAppCampaign.findMany({
-      where: { tenantId: (req.user as any).tenantId },
+      where: { tenantId: user.tenantId },
       orderBy: { createdAt: 'desc' },
     });
     return { success: true, data: campaigns };
   });
 
   fastify.post('/whatsapp/campaigns', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = req.body as { name: string; template?: string; message: string; scheduledAt?: string };
     const campaign = await fastify.prisma.whatsAppCampaign.create({
       data: {
         id: randomUUID(),
-        tenantId: (req.user as any).tenantId,
+        tenantId: user.tenantId,
         name: body.name,
         template: body.template || '',
         message: body.message,
@@ -32,17 +34,19 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
   });
 
   fastify.patch('/whatsapp/campaigns/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     const body = req.body as Record<string, unknown>;
-    const existing = await fastify.prisma.whatsAppCampaign.findFirst({ where: { id, tenantId: (req.user as any).tenantId } });
+    const existing = await fastify.prisma.whatsAppCampaign.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!existing) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Campaign not found' } });
     const updated = await fastify.prisma.whatsAppCampaign.update({ where: { id }, data: body });
     return { success: true, data: updated };
   });
 
   fastify.delete('/whatsapp/campaigns/:id', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
-    await fastify.prisma.whatsAppCampaign.deleteMany({ where: { id, tenantId: (req.user as any).tenantId } });
+    await fastify.prisma.whatsAppCampaign.deleteMany({ where: { id, tenantId: user.tenantId } });
     return { success: true, data: null };
   });
 

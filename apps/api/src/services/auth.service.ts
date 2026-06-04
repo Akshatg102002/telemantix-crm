@@ -2,9 +2,10 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { LoginInput, RegisterInput } from '@telemantix/shared';
+import { FastifyInstance } from 'fastify';
 
 export class AuthService {
-  constructor(private readonly fastify: { jwt: { sign: (payload: object, options?: object) => string } }) {}
+  constructor(private readonly fastify: FastifyInstance) {}
 
   async login(input: LoginInput, tenantId: string) {
     const user = await prisma.user.findFirst({

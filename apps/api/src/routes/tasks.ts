@@ -7,13 +7,14 @@ export async function taskRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/tasks', async (req) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const q = req.query as Record<string, string>;
-    const where: Record<string, unknown> = { tenantId: req.user.tenantId };
+    const where: Record<string, unknown> = { tenantId: user.tenantId };
     if (q.assignedUserId) where.assignedUserId = q.assignedUserId;
     if (q.status) where.status = q.status;
     if (q.priority) where.priority = q.priority;
     if (q.leadId) where.leadId = q.leadId;
-    if (q.mine === 'true') where.assignedUserId = req.user.sub;
+    if (q.mine === 'true') where.assignedUserId = user.sub;
     if (q.overdue === 'true') where.dueDate = { lt: new Date() };
 
     const tasks = await fastify.prisma.task.findMany({
@@ -29,18 +30,20 @@ export async function taskRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/tasks', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = CreateTaskSchema.parse(req.body);
     const task = await fastify.prisma.task.create({
-      data: { id: randomUUID(), tenantId: req.user.tenantId, ...body },
+      data: { id: randomUUID(), tenantId: user.tenantId, ...body },
     });
     reply.code(201);
     return { success: true, data: task };
   });
 
   fastify.patch('/tasks/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
     const body = UpdateTaskSchema.parse(req.body);
-    const task = await fastify.prisma.task.findFirst({ where: { id, tenantId: req.user.tenantId } });
+    const task = await fastify.prisma.task.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!task) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Task not found' } });
 
     const updateData: Record<string, unknown> = { ...body };
@@ -51,8 +54,9 @@ export async function taskRoutes(fastify: FastifyInstance) {
   });
 
   fastify.delete('/tasks/:id', async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const { id } = req.params as { id: string };
-    const task = await fastify.prisma.task.findFirst({ where: { id, tenantId: req.user.tenantId } });
+    const task = await fastify.prisma.task.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!task) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Task not found' } });
     await fastify.prisma.task.update({ where: { id }, data: { status: 'cancelled' } });
     return { success: true, data: null };

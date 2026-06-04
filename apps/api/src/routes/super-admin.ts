@@ -162,7 +162,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         include: {
           subscription: { include: { plan: true } },
           users: { select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true } },
-          _count: { select: { leads: true, followUps: true, automations: true } },
+          _count: { select: { leads: true, automations: true } },
         },
       });
       if (!tenant) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } });
@@ -274,7 +274,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       const tenant = await protected_.prisma.tenant.findUnique({ where: { id } });
       if (!tenant) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } });
       const accessToken = protected_.jwt.sign(
-        { sub: adminUser.id, tenantId: id, role: adminUser.role, impersonated: true },
+        { sub: adminUser.id, tenantId: id, role: adminUser.role, impersonated: true } as any,
         { expiresIn: '1h' },
       );
       return {
@@ -509,8 +509,8 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       const { key, value, metadata } = req.body as { key: string; value: boolean; metadata?: Record<string, unknown> };
       const flag = await protected_.prisma.featureFlag.upsert({
         where: { tenantId_key: { tenantId: '', key } },
-        update: { value, metadata },
-        create: { id: randomUUID(), key, value: value ?? true, metadata },
+        update: { value, metadata: metadata as any },
+        create: { id: randomUUID(), key, value: value ?? true, metadata: metadata as any },
       });
       reply.code(201);
       return { success: true, data: flag };
@@ -519,7 +519,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
     protected_.put('/super-admin/feature-flags/:id', async (req) => {
       const { id } = req.params as { id: string };
       const body = req.body as { value?: boolean; metadata?: Record<string, unknown> };
-      const flag = await protected_.prisma.featureFlag.update({ where: { id }, data: body });
+      const flag = await protected_.prisma.featureFlag.update({ where: { id }, data: { ...body, metadata: body.metadata as any } });
       return { success: true, data: flag };
     });
 
@@ -534,8 +534,8 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       const { value, category } = req.body as { value: unknown; category?: string };
       const setting = await protected_.prisma.globalSetting.upsert({
         where: { key },
-        update: { value, category: category || 'general' },
-        create: { id: randomUUID(), key, value, category: category || 'general' },
+        update: { value: value as any, category: category || 'general' },
+        create: { id: randomUUID(), key, value: value as any, category: category || 'general' },
       });
       return { success: true, data: setting };
     });
