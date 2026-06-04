@@ -75,7 +75,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
     const passwordHash = await bcrypt.hash(body.password, 12);
 
     // Create tenant + subscription + admin user in a transaction
-    const [tenant, user] = await fastify.prisma.$transaction(async (tx) => {
+    const [tenant, user] = await fastify.prisma.$transaction(async (tx: any) => {
       const tenant = await tx.tenant.create({
         data: {
           id: tenantId,

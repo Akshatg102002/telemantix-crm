@@ -72,7 +72,7 @@ export async function toolsRoutes(fastify: FastifyInstance) {
 
       if (body.format === 'csv') {
         const headers = (body.fields?.length ? body.fields : ['name', 'phone', 'email', 'status', 'source', 'score', 'createdAt']).join(',');
-        const rows = leads.map(l => [
+        const rows = leads.map((l: any) => [
           `"${l.name}"`, l.phone, l.email || '',
           l.status?.name || '', l.source?.name || '',
           l.score, new Date(l.createdAt).toISOString(),

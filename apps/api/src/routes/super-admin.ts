@@ -5,8 +5,8 @@
  * so it doesn't require the token. All protected routes are in a second sub-scope.
  *
  * Architecture: two fastify.register() calls inside the main export:
- *   1. Public (login only)
- *   2. Protected (everything else, preHandler: requireSuperAdmin)
+ * 1. Public (login only)
+ * 2. Protected (everything else, preHandler: requireSuperAdmin)
  */
 import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
@@ -59,7 +59,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         where: { status: { in: ['active', 'trial'] } },
         include: { plan: true },
       });
-      const mrr = allActiveSubs.reduce((sum, s) => {
+      const mrr = allActiveSubs.reduce((sum: number, s: any) => {
         return sum + (s.billingCycle === 'yearly' ? s.plan.yearlyPrice / 12 : s.plan.price);
       }, 0);
 
@@ -81,7 +81,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
           GROUP BY DATE_TRUNC('month', "createdAt"), TO_CHAR(DATE_TRUNC('month', "createdAt"), 'Mon ''YY')
           ORDER BY DATE_TRUNC('month', "createdAt")
         `;
-        signupTrend = raw.map(r => ({ month: r.month, count: Number(r.count) }));
+        signupTrend = raw.map((r: any) => ({ month: r.month, count: Number(r.count) }));
       } catch { /* ignore */ }
 
       let topCompanies: Array<{ name: string; count: number }> = [];
@@ -91,11 +91,11 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
           FROM "Tenant" t LEFT JOIN "Lead" l ON l."tenantId" = t.id
           GROUP BY t.id, t.name ORDER BY count DESC LIMIT 10
         `;
-        topCompanies = raw.map(r => ({ name: r.name, count: Number(r.count) }));
+        topCompanies = raw.map((r: any) => ({ name: r.name, count: Number(r.count) }));
       } catch { /* ignore */ }
 
       const planDist = await Promise.all(
-        plans.map(async p => ({
+        plans.map(async (p: any) => ({
           name: p.name,
           count: await protected_.prisma.subscription.count({ where: { planId: p.id } }),
         }))
@@ -184,7 +184,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         ? await protected_.prisma.plan.findUnique({ where: { slug: body.planSlug } })
         : await protected_.prisma.plan.findFirst({ where: { slug: 'starter' } });
 
-      const tenant = await protected_.prisma.$transaction(async (tx) => {
+      const tenant = await protected_.prisma.$transaction(async (tx: any) => {
         const t = await tx.tenant.create({
           data: {
             id: randomUUID(), name: body.name, slug,
@@ -295,8 +295,8 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       const periodEnd = extendDays
         ? new Date(now.getTime() + extendDays * 86400000)
         : billingCycle === 'yearly'
-        ? new Date(now.getTime() + 365 * 86400000)
-        : new Date(now.getTime() + 30 * 86400000);
+          ? new Date(now.getTime() + 365 * 86400000)
+          : new Date(now.getTime() + 30 * 86400000);
 
       const sub = await protected_.prisma.subscription.upsert({
         where: { tenantId: id },
@@ -314,7 +314,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
     // ── Plans ──────────────────────────────────────────────────────────────
     protected_.get('/super-admin/plans', async () => {
       const plans = await protected_.prisma.plan.findMany({ orderBy: { sortOrder: 'asc' } });
-      const withMeta = await Promise.all(plans.map(async p => ({
+      const withMeta = await Promise.all(plans.map(async (p: any) => ({
         ...p,
         subscriberCount: await protected_.prisma.subscription.count({ where: { planId: p.id } }),
         activeCount: await protected_.prisma.subscription.count({ where: { planId: p.id, status: 'active' } }),
@@ -377,11 +377,11 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
         include: { plan: true, tenant: { select: { name: true } } },
         orderBy: { createdAt: 'desc' },
       });
-      const withAmount = subs.map(s => ({
+      const withAmount = subs.map((s: any) => ({
         ...s,
         monthlyAmount: s.billingCycle === 'yearly' ? s.plan.yearlyPrice / 12 : s.plan.price,
       }));
-      const mrr = withAmount.reduce((sum, s) => sum + s.monthlyAmount, 0);
+      const mrr = withAmount.reduce((sum: number, s: any) => sum + s.monthlyAmount, 0);
       return {
         success: true,
         data: { mrr: Math.round(mrr), arr: Math.round(mrr * 12), avgRevPerUser: subs.length ? Math.round(mrr / subs.length) : 0, subscriptions: withAmount },
@@ -450,7 +450,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       ]);
 
       const allSubs = await protected_.prisma.subscription.findMany({ include: { plan: true } });
-      const mrr = allSubs.filter(s => ['active', 'trial'].includes(s.status)).reduce((sum, s) =>
+      const mrr = allSubs.filter((s: any) => ['active', 'trial'].includes(s.status)).reduce((sum: number, s: any) =>
         sum + (s.billingCycle === 'yearly' ? s.plan.yearlyPrice / 12 : s.plan.price), 0);
 
       return {
