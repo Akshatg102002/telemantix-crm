@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -13,6 +13,7 @@ import { Label } from '../components/ui/label'
 import { useToast } from '../components/ui/toast'
 
 const schema = z.object({
+  workspace: z.string().min(1, 'Workspace is required'),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
 })
@@ -26,17 +27,25 @@ export function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { workspace: 'demo' },
+  })
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     try {
-      const res = await api.post('/auth/login', data)
+      const res = await api.post('/auth/login', {
+        email: data.email,
+        password: data.password,
+      }, {
+        headers: { 'x-tenant': data.workspace.toLowerCase().trim() },
+      })
       const { user, tenant, accessToken, refreshToken } = res.data.data
       setAuth(user, tenant, accessToken, refreshToken)
       navigate('/dashboard')
     } catch {
-      toastError('Invalid credentials', 'Please check your email and password')
+      toastError('Invalid credentials', 'Please check your workspace, email and password')
     } finally {
       setLoading(false)
     }
@@ -73,6 +82,23 @@ export function LoginPage() {
         <div className="bg-bg-surface rounded-2xl border border-border p-6 gradient-border shadow-2xl">
           <h2 className="font-heading font-semibold text-text-primary text-lg mb-5">Welcome back</h2>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
+            {/* Workspace */}
+            <div className="space-y-1.5">
+              <Label htmlFor="workspace">Workspace</Label>
+              <div className="relative flex items-center">
+                <Input
+                  id="workspace"
+                  type="text"
+                  placeholder="your-company"
+                  error={errors.workspace?.message}
+                  {...register('workspace')}
+                />
+              </div>
+              <p className="text-xs text-text-muted">Your company's workspace slug (e.g. "demo", "my-company")</p>
+            </div>
+
+            {/* Email */}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -83,6 +109,8 @@ export function LoginPage() {
                 {...register('email')}
               />
             </div>
+
+            {/* Password */}
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -102,13 +130,23 @@ export function LoginPage() {
                 </button>
               </div>
             </div>
+
             <Button type="submit" className="w-full mt-2" loading={loading}>
               Sign In
             </Button>
           </form>
-          <p className="text-center text-xs text-text-muted mt-4">
-            Demo: <span className="text-text-secondary">admin@demo.com / admin123</span>
-          </p>
+
+          <div className="mt-4 text-center space-y-2">
+            <p className="text-xs text-text-muted">
+              Don't have an account?{' '}
+              <Link to="/signup" className="text-brand-purple hover:underline">
+                Sign up free
+              </Link>
+            </p>
+            <p className="text-xs text-text-muted">
+              Demo: <span className="text-text-secondary">workspace: demo / admin@demo.com / Admin@123</span>
+            </p>
+          </div>
         </div>
       </motion.div>
     </div>

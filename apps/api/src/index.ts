@@ -39,7 +39,9 @@ async function bootstrap() {
   await fastify.register(cors, {
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     credentials: true,
-  });
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  })
 
   await fastify.register(helmet, { contentSecurityPolicy: false });
 
