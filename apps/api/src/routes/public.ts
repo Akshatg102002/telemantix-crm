@@ -150,13 +150,13 @@ export async function publicRoutes(fastify: FastifyInstance) {
       { sub: user.id, tenantId: tenant.id, role: user.role },
       { expiresIn: '15m' },
     );
+
     const rawRefresh = randomUUID();
-    const refreshHash = await bcrypt.hash(rawRefresh, 6);
     await fastify.prisma.refreshToken.create({
       data: {
         id: randomUUID(),
         userId: user.id,
-        token: refreshHash,
+        token: rawRefresh,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
