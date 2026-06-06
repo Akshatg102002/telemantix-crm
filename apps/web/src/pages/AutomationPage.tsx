@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 import { Plus, Zap, Play, Pause, Trash2, ChevronRight } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useServiceEnabled } from '../hooks/useServiceEnabled'
+import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -48,8 +50,11 @@ const ACTIONS = [
 ]
 
 export function AutomationPage() {
+  const automationEnabled = useServiceEnabled('automation_engine')
   const { success, error: toastError } = useToast()
   const qc = useQueryClient()
+
+  if (!automationEnabled) return <ServiceDisabledPlaceholder serviceName="Automation Engine" />
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [trigger, setTrigger] = useState('lead_created')

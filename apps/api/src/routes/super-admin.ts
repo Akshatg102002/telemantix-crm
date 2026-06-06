@@ -12,6 +12,7 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { requireSuperAdmin, signSuperAdminToken } from '../middleware/superAdmin';
+import { syncTenantServices } from '../lib/syncTenantServices';
 
 export async function superAdminRoutes(fastify: FastifyInstance) {
   // ── PUBLIC scope: Login only (NO auth required) ────────────────────────────
@@ -204,6 +205,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
               currentPeriodEnd: new Date(now.getTime() + 30 * 86400000),
             },
           });
+          await syncTenantServices(tx, t.id, plan.id);
         }
         if (body.adminEmail && body.adminName) {
           const ph = await bcrypt.hash('Welcome@123', 10);
@@ -308,6 +310,12 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
           currentPeriodStart: now, currentPeriodEnd: periodEnd,
         },
       });
+      // Sync services for new plan
+      try {
+        await protected_.prisma.$transaction(async (tx: any) => {
+          await syncTenantServices(tx, id, planId);
+        });
+      } catch { /* non-fatal */ }
       return { success: true, data: sub };
     });
 
@@ -323,20 +331,23 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
     });
 
     protected_.post('/super-admin/plans', async (req, reply) => {
-      const body = req.body as {
-        name: string; slug: string; price: number; yearlyPrice: number;
-        maxUsers: number; maxLeads: number; features: string[];
-        isPopular?: boolean; sortOrder?: number;
-      };
+      const body = req.body as Record<string, unknown>;
       const plan = await protected_.prisma.plan.create({
         data: {
           id: randomUUID(),
-          name: body.name, slug: body.slug,
-          price: body.price, yearlyPrice: body.yearlyPrice,
-          maxUsers: body.maxUsers, maxLeads: body.maxLeads,
-          features: body.features,
-          isPopular: body.isPopular || false,
-          sortOrder: body.sortOrder || 0,
+          name: String(body.name || ''),
+          slug: String(body.slug || ''),
+          description: body.description ? String(body.description) : null,
+          price: Number(body.price || 0),
+          yearlyPrice: Number(body.yearlyPrice || 0),
+          maxUsers: Number(body.maxUsers || 5),
+          maxLeads: Number(body.maxLeads || 1000),
+          maxAutomations: body.maxAutomations !== undefined ? Number(body.maxAutomations) : -1,
+          maxApiCalls: body.maxApiCalls !== undefined ? Number(body.maxApiCalls) : -1,
+          features: Array.isArray(body.features) ? body.features as string[] : [],
+          includedServices: Array.isArray(body.includedServices) ? body.includedServices as string[] : [],
+          isPopular: Boolean(body.isPopular),
+          sortOrder: Number(body.sortOrder || 0),
         },
       });
       reply.code(201);
@@ -345,8 +356,23 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
 
     protected_.put('/super-admin/plans/:id', async (req) => {
       const { id } = req.params as { id: string };
-      const body = req.body as Partial<{ name: string; price: number; yearlyPrice: number; maxUsers: number; maxLeads: number; features: string[]; isActive: boolean; isPopular: boolean; sortOrder: number }>;
-      const plan = await protected_.prisma.plan.update({ where: { id }, data: body });
+      const body = req.body as Record<string, unknown>;
+      const updateData: Record<string, unknown> = {};
+      if (body.name !== undefined) updateData.name = String(body.name);
+      if (body.slug !== undefined) updateData.slug = String(body.slug);
+      if (body.description !== undefined) updateData.description = body.description ? String(body.description) : null;
+      if (body.price !== undefined) updateData.price = Number(body.price);
+      if (body.yearlyPrice !== undefined) updateData.yearlyPrice = Number(body.yearlyPrice);
+      if (body.maxUsers !== undefined) updateData.maxUsers = Number(body.maxUsers);
+      if (body.maxLeads !== undefined) updateData.maxLeads = Number(body.maxLeads);
+      if (body.maxAutomations !== undefined) updateData.maxAutomations = Number(body.maxAutomations);
+      if (body.maxApiCalls !== undefined) updateData.maxApiCalls = Number(body.maxApiCalls);
+      if (body.features !== undefined) updateData.features = Array.isArray(body.features) ? body.features : [];
+      if (body.includedServices !== undefined) updateData.includedServices = Array.isArray(body.includedServices) ? body.includedServices : [];
+      if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive);
+      if (body.isPopular !== undefined) updateData.isPopular = Boolean(body.isPopular);
+      if (body.sortOrder !== undefined) updateData.sortOrder = Number(body.sortOrder);
+      const plan = await protected_.prisma.plan.update({ where: { id }, data: updateData });
       return { success: true, data: plan };
     });
 
@@ -631,6 +657,175 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
       const newTrialEnd = new Date(sub.trialEndsAt.getTime() + days * 86400000);
       const updated = await protected_.prisma.subscription.update({ where: { tenantId: id }, data: { trialEndsAt: newTrialEnd } });
       return { success: true, data: updated };
+    });
+
+    // ── Service Definitions (Global) ───────────────────────────────────────
+    protected_.get('/super-admin/services', async () => {
+      const services = await protected_.prisma.serviceDefinition.findMany({ orderBy: [{ category: 'asc' }, { name: 'asc' }] });
+      return { success: true, data: services };
+    });
+
+    protected_.put('/super-admin/services/:key/toggle', async (req) => {
+      const { key } = req.params as { key: string };
+      const svc = await protected_.prisma.serviceDefinition.findUnique({ where: { key } });
+      if (!svc || svc.isCore) return { success: false, error: { message: 'Cannot toggle core service' } };
+      const updated = await protected_.prisma.serviceDefinition.update({ where: { key }, data: { isEnabled: !svc.isEnabled } });
+      return { success: true, data: updated };
+    });
+
+    protected_.put('/super-admin/services/:key/maintenance', async (req) => {
+      const { key } = req.params as { key: string };
+      const { isMaintenance, maintenanceMsg } = req.body as { isMaintenance: boolean; maintenanceMsg?: string };
+      const updated = await protected_.prisma.serviceDefinition.update({
+        where: { key },
+        data: { isMaintenance: Boolean(isMaintenance), maintenanceMsg: maintenanceMsg || null },
+      });
+      return { success: true, data: updated };
+    });
+
+    protected_.get('/super-admin/services/health', async () => {
+      let dbHealthy = true;
+      try { await protected_.prisma.$queryRaw`SELECT 1`; } catch { dbHealthy = false; }
+      let redisHealthy = true;
+      try {
+        const { redis } = await import('../lib/redis');
+        await redis.ping();
+      } catch { redisHealthy = false; }
+
+      const services = await protected_.prisma.serviceDefinition.findMany();
+      const results = services.map((s: any) => ({
+        key: s.key, name: s.name, category: s.category,
+        status: !s.isEnabled ? 'disabled' : s.isMaintenance ? 'maintenance' : (s.key === 'leads' || s.key === 'pipeline') && !dbHealthy ? 'degraded' : 'healthy',
+        message: s.isMaintenance ? s.maintenanceMsg : undefined,
+      }));
+
+      // Log health check
+      await protected_.prisma.serviceHealthLog.createMany({
+        data: results.map((r: any) => ({ id: randomUUID(), serviceKey: r.key, status: r.status, message: r.message || null })),
+        skipDuplicates: true,
+      });
+
+      return { success: true, data: { services: results, infrastructure: { database: dbHealthy ? 'healthy' : 'degraded', redis: redisHealthy ? 'healthy' : 'degraded' }, checkedAt: new Date().toISOString() } };
+    });
+
+    protected_.get('/super-admin/services/health/logs', async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const logs = await protected_.prisma.serviceHealthLog.findMany({
+        where: { checkedAt: { gte: since } },
+        orderBy: { checkedAt: 'desc' },
+        take: 500,
+      });
+      return { success: true, data: logs };
+    });
+
+    // ── Company Services (per-tenant overrides) ────────────────────────────
+    protected_.get('/super-admin/companies/:id/services', async (req) => {
+      const { id } = req.params as { id: string };
+      const [allServices, tenantServices] = await Promise.all([
+        protected_.prisma.serviceDefinition.findMany({ orderBy: [{ category: 'asc' }, { name: 'asc' }] }),
+        protected_.prisma.tenantService.findMany({ where: { tenantId: id } }),
+      ]);
+      const tsMap = new Map(tenantServices.map((ts: any) => [ts.serviceKey, ts]));
+      const merged = allServices.map((s: any) => ({
+        ...s,
+        tenantEnabled: tsMap.has(s.key) ? (tsMap.get(s.key) as any).isEnabled : null,
+        overriddenBySuperAdmin: tsMap.has(s.key) ? (tsMap.get(s.key) as any).overriddenBySuperAdmin : false,
+        disabledReason: tsMap.has(s.key) ? (tsMap.get(s.key) as any).disabledReason : null,
+      }));
+      return { success: true, data: merged };
+    });
+
+    protected_.put('/super-admin/companies/:id/services/:key', async (req) => {
+      const { id, key } = req.params as { id: string; key: string };
+      const { isEnabled, disabledReason } = req.body as { isEnabled: boolean; disabledReason?: string };
+      const ts = await protected_.prisma.tenantService.upsert({
+        where: { tenantId_serviceKey: { tenantId: id, serviceKey: key } },
+        update: { isEnabled: Boolean(isEnabled), overriddenBySuperAdmin: true, disabledReason: disabledReason || null },
+        create: { id: randomUUID(), tenantId: id, serviceKey: key, isEnabled: Boolean(isEnabled), overriddenBySuperAdmin: true, disabledReason: disabledReason || null },
+      });
+      return { success: true, data: ts };
+    });
+
+    protected_.post('/super-admin/companies/:id/services/reset', async (req) => {
+      const { id } = req.params as { id: string };
+      const sub = await protected_.prisma.subscription.findUnique({ where: { tenantId: id }, select: { planId: true } });
+      if (!sub) return { success: false, error: { message: 'No subscription found' } };
+      await protected_.prisma.$transaction(async (tx: any) => {
+        await tx.tenantService.deleteMany({ where: { tenantId: id } });
+        await syncTenantServices(tx, id, sub.planId);
+      });
+      return { success: true, data: null };
+    });
+
+    protected_.post('/super-admin/companies/:id/services/bulk', async (req) => {
+      const { id } = req.params as { id: string };
+      const { services } = req.body as { services: Array<{ key: string; isEnabled: boolean; disabledReason?: string }> };
+      await Promise.all(services.map((s: { key: string; isEnabled: boolean; disabledReason?: string }) =>
+        protected_.prisma.tenantService.upsert({
+          where: { tenantId_serviceKey: { tenantId: id, serviceKey: s.key } },
+          update: { isEnabled: Boolean(s.isEnabled), overriddenBySuperAdmin: true, disabledReason: s.disabledReason || null },
+          create: { id: randomUUID(), tenantId: id, serviceKey: s.key, isEnabled: Boolean(s.isEnabled), overriddenBySuperAdmin: true, disabledReason: s.disabledReason || null },
+        })
+      ));
+      return { success: true, data: null };
+    });
+
+    // ── Custom Packages ────────────────────────────────────────────────────
+    protected_.get('/super-admin/companies/:id/custom-package', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const pkg = await protected_.prisma.customPackage.findFirst({ where: { tenantId: id }, orderBy: { createdAt: 'desc' } });
+      if (!pkg) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'No custom package' } });
+      return { success: true, data: pkg };
+    });
+
+    protected_.post('/super-admin/companies/:id/custom-package', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const { name, notes, services } = req.body as { name?: string; notes?: string; services: string[] };
+      const pkg = await protected_.prisma.$transaction(async (tx: any) => {
+        const p = await tx.customPackage.create({
+          data: { id: randomUUID(), tenantId: id, name: name || null, notes: notes || null, services, status: 'approved' },
+        });
+        // Enable selected services
+        const allServices = await tx.serviceDefinition.findMany({ select: { key: true } });
+        for (const svc of allServices) {
+          await tx.tenantService.upsert({
+            where: { tenantId_serviceKey: { tenantId: id, serviceKey: svc.key } },
+            update: { isEnabled: services.includes(svc.key), overriddenBySuperAdmin: true },
+            create: { id: randomUUID(), tenantId: id, serviceKey: svc.key, isEnabled: services.includes(svc.key), overriddenBySuperAdmin: true },
+          });
+        }
+        // Send in-app notification to tenant admin
+        const adminUser = await tx.user.findFirst({ where: { tenantId: id, role: 'admin' }, select: { id: true } });
+        if (adminUser) {
+          await tx.notification.create({
+            data: {
+              id: randomUUID(), tenantId: id, userId: adminUser.id,
+              title: 'Custom Package Configured',
+              body: 'Your custom package has been configured by our team. Your selected services are now active.',
+              type: 'custom_package',
+            },
+          });
+        }
+        return p;
+      });
+      reply.code(201);
+      return { success: true, data: pkg };
+    });
+
+    protected_.delete('/super-admin/companies/:id/custom-package', async (req) => {
+      const { id } = req.params as { id: string };
+      await protected_.prisma.customPackage.deleteMany({ where: { tenantId: id } });
+      return { success: true, data: null };
+    });
+
+    // ── Pending Custom Package Requests ────────────────────────────────────
+    protected_.get('/super-admin/custom-packages/pending', async () => {
+      const packages = await protected_.prisma.customPackage.findMany({
+        where: { status: 'pending' },
+        include: { tenant: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { success: true, data: packages };
     });
   });
 }

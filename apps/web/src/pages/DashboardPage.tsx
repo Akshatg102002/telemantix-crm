@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Target, TrendingUp, Calendar, DollarSign, ArrowUpRight, Users, Zap } from 'lucide-react'
+import { Target, TrendingUp, Calendar, DollarSign, ArrowUpRight, Users, Zap, CheckCircle, AlertTriangle, XCircle, Clock } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { api } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -37,6 +37,56 @@ function KpiCard({ title, value, icon: Icon, change, gradient }: {
 }
 
 const COLORS = ['#7B2FBE', '#C43E8A', '#E8622A', '#22C55E', '#F59E0B', '#3B82F6']
+
+interface ServiceStatusItem {
+  key: string
+  name: string
+  effectiveEnabled: boolean
+  isMaintenance: boolean
+  maintenanceMsg: string | null
+}
+
+function SystemStatusWidget() {
+  const { data: statusData } = useQuery({
+    queryKey: ['dashboard-service-status'],
+    queryFn: () => api.get('/dashboard/service-status').then(r => r.data.data),
+    staleTime: 2 * 60 * 1000,
+  })
+
+  if (!statusData) return null
+
+  const getIcon = (svc: ServiceStatusItem) => {
+    if (!svc.effectiveEnabled) return <XCircle className="h-3 w-3 text-danger" />
+    if (svc.isMaintenance) return <Clock className="h-3 w-3 text-warning" />
+    return <CheckCircle className="h-3 w-3 text-success" />
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          {statusData.hasIssues
+            ? <AlertTriangle className="h-4 w-4 text-warning" />
+            : <CheckCircle className="h-4 w-4 text-success" />}
+          System Status
+        </CardTitle>
+        <Badge variant={statusData.hasIssues ? 'warning' : 'success'} className="text-[9px]">
+          {statusData.summary}
+        </Badge>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {statusData.services?.map((svc: ServiceStatusItem) => (
+            <div key={svc.key} className={`flex items-center gap-1.5 text-xs p-1.5 rounded-lg ${!svc.effectiveEnabled ? 'bg-danger/5' : svc.isMaintenance ? 'bg-warning/5' : 'bg-bg-elevated'}`}>
+              {getIcon(svc)}
+              <span className="text-text-secondary truncate">{svc.name}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export function DashboardPage() {
   const { data: overview } = useQuery({
@@ -150,6 +200,9 @@ export function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </motion.div>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        <SystemStatusWidget />
       </motion.div>
     </div>
   )

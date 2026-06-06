@@ -46,6 +46,8 @@ model Tenant {
   apiKeys             ApiKey[]
   subscription        Subscription?
   integrationSecrets  IntegrationSecret[]
+  tenantServices      TenantService[]
+  customPackages      CustomPackage[]
 
   @@schema("public")
 }
@@ -555,25 +557,26 @@ model Channel {
 // ─── Plans & Subscriptions ──────────────────────────────────────────────────
 
 model Plan {
-  id              String   @id @default(uuid())
-  name            String
-  slug            String   @unique
-  description     String?
-  price           Float
-  yearlyPrice     Float
-  maxUsers        Int
-  maxLeads        Int
-  maxAutomations  Int      @default(-1)
-  maxApiCalls     Int      @default(-1)
-  features        Json     @default("[]")
-  isActive        Boolean  @default(true)
-  isPopular       Boolean  @default(false)
-  isArchived      Boolean  @default(false)
-  trialDays       Int      @default(14)
-  sortOrder       Int      @default(0)
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  description      String?
+  price            Float
+  yearlyPrice      Float
+  maxUsers         Int
+  maxLeads         Int
+  maxAutomations   Int      @default(-1)
+  maxApiCalls      Int      @default(-1)
+  features         Json     @default("[]")
+  includedServices String[]
+  isActive         Boolean  @default(true)
+  isPopular        Boolean  @default(false)
+  isArchived       Boolean  @default(false)
+  trialDays        Int      @default(14)
+  sortOrder        Int      @default(0)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   subscriptions Subscription[]
 
@@ -767,5 +770,75 @@ model IntegrationSecret {
   @@unique([tenantId, provider, keyName])
   @@index([tenantId])
   @@index([tenantId, provider])
+  @@schema("public")
+}
+
+// ─── Service Control ──────────────────────────────────────────────────────────
+
+model ServiceDefinition {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  name            String
+  category        String
+  isEnabled       Boolean  @default(true)
+  isMaintenance   Boolean  @default(false)
+  maintenanceMsg  String?
+  isCore          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenantServices  TenantService[]
+  healthLogs      ServiceHealthLog[]
+
+  @@index([category])
+  @@schema("public")
+}
+
+model TenantService {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  serviceKey           String
+  isEnabled            Boolean  @default(true)
+  overriddenBySuperAdmin Boolean @default(false)
+  disabledReason       String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service    ServiceDefinition @relation(fields: [serviceKey], references: [key], onDelete: Cascade)
+
+  @@unique([tenantId, serviceKey])
+  @@index([tenantId])
+  @@schema("public")
+}
+
+model CustomPackage {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String?
+  notes     String?
+  services  String[]
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@schema("public")
+}
+
+model ServiceHealthLog {
+  id         String   @id @default(uuid())
+  serviceKey String
+  status     String
+  message    String?
+  checkedAt  DateTime @default(now())
+
+  service ServiceDefinition @relation(fields: [serviceKey], references: [key], onDelete: Cascade)
+
+  @@index([serviceKey])
+  @@index([checkedAt])
   @@schema("public")
 }

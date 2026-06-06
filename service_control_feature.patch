@@ -1,0 +1,2755 @@
+From 0cc268d5ca3669f0c5fecdee7cbf9a34d3922801 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 6 Jun 2026 16:53:32 +0000
+Subject: [PATCH] feat: service control panel, custom packages, health
+ monitoring, feature access guards
+
+- Add Prisma models: ServiceDefinition, TenantService, CustomPackage, ServiceHealthLog
+- Add includedServices[] to Plan model; run service_control migration
+- Seed 29 service definitions across 7 categories with core flags; add Custom plan
+- Create syncTenantServices utility called on tenant create & plan change
+- Fix super-admin plan PUT/POST handlers with explicit type conversions
+- Add SuperAdmin routes: services CRUD, health check, company service overrides, custom packages
+- Add dashboard/service-status and settings/my-services API routes
+- New SuperAdminServices page with global toggle, maintenance mode, health monitor (60s poll)
+- New SuperAdminCustomPackage page with checkbox grid, live preview, package builder
+- SuperAdminPlans: tag input for features array, checkbox grid for includedServices
+- SuperAdminCompanies: Services tab with per-tenant toggle, override badge, reset to defaults
+- SuperAdminDashboard: Pending custom package requests widget with Configure links
+- SignupPage: Custom Package option with custom success message
+- AppLayout: dismissible maintenance banners fetched on load (sessionStorage dismiss)
+- DashboardPage: System Status widget showing all service health indicators
+- useServiceEnabled hook + ServiceDisabledPlaceholder component
+- Feature guards on WhatsApp, Automation, Integrations pages
+
+https://claude.ai/code/session_01PShefSo9PGDowCxKnfp21a
+---
+ .../migration.sql                             |  93 +++++++
+ apps/api/prisma/schema.prisma                 | 111 ++++++--
+ apps/api/prisma/seed.ts                       |  69 ++++-
+ apps/api/src/lib/syncTenantServices.ts        |  29 ++
+ apps/api/src/routes/analytics.ts              |  28 ++
+ apps/api/src/routes/public.ts                 |   8 +
+ apps/api/src/routes/settings.ts               |  25 ++
+ apps/api/src/routes/super-admin.ts            | 221 ++++++++++++++-
+ apps/web/src/App.tsx                          |   4 +
+ apps/web/src/components/layout/AppLayout.tsx  |  58 ++++
+ .../components/layout/SuperAdminLayout.tsx    |   3 +-
+ .../ui/ServiceDisabledPlaceholder.tsx         |  22 ++
+ apps/web/src/hooks/useServiceEnabled.ts       |  22 ++
+ apps/web/src/pages/AutomationPage.tsx         |   5 +
+ apps/web/src/pages/DashboardPage.tsx          |  55 +++-
+ apps/web/src/pages/IntegrationsPage.tsx       |   3 +
+ apps/web/src/pages/WhatsAppCampaignsPage.tsx  |   5 +
+ apps/web/src/pages/public/SignupPage.tsx      |  42 ++-
+ .../pages/super-admin/SuperAdminCompanies.tsx | 176 +++++++++++-
+ .../super-admin/SuperAdminCustomPackage.tsx   | 251 +++++++++++++++++
+ .../pages/super-admin/SuperAdminDashboard.tsx |  46 +++-
+ .../src/pages/super-admin/SuperAdminPlans.tsx | 200 +++++++++++++-
+ .../pages/super-admin/SuperAdminServices.tsx  | 255 ++++++++++++++++++
+ package-lock.json                             |  52 ++--
+ 24 files changed, 1701 insertions(+), 82 deletions(-)
+ create mode 100644 apps/api/prisma/migrations/20260606164228_service_control/migration.sql
+ create mode 100644 apps/api/src/lib/syncTenantServices.ts
+ create mode 100644 apps/web/src/components/ui/ServiceDisabledPlaceholder.tsx
+ create mode 100644 apps/web/src/hooks/useServiceEnabled.ts
+ create mode 100644 apps/web/src/pages/super-admin/SuperAdminCustomPackage.tsx
+ create mode 100644 apps/web/src/pages/super-admin/SuperAdminServices.tsx
+
+diff --git a/apps/api/prisma/migrations/20260606164228_service_control/migration.sql b/apps/api/prisma/migrations/20260606164228_service_control/migration.sql
+new file mode 100644
+index 0000000..4304486
+--- /dev/null
++++ b/apps/api/prisma/migrations/20260606164228_service_control/migration.sql
+@@ -0,0 +1,93 @@
++-- AlterTable
++ALTER TABLE "public"."Plan" ADD COLUMN     "includedServices" TEXT[];
++
++-- CreateTable
++CREATE TABLE "public"."ServiceDefinition" (
++    "id" TEXT NOT NULL,
++    "key" TEXT NOT NULL,
++    "name" TEXT NOT NULL,
++    "category" TEXT NOT NULL,
++    "isEnabled" BOOLEAN NOT NULL DEFAULT true,
++    "isMaintenance" BOOLEAN NOT NULL DEFAULT false,
++    "maintenanceMsg" TEXT,
++    "isCore" BOOLEAN NOT NULL DEFAULT false,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "ServiceDefinition_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "public"."TenantService" (
++    "id" TEXT NOT NULL,
++    "tenantId" TEXT NOT NULL,
++    "serviceKey" TEXT NOT NULL,
++    "isEnabled" BOOLEAN NOT NULL DEFAULT true,
++    "overriddenBySuperAdmin" BOOLEAN NOT NULL DEFAULT false,
++    "disabledReason" TEXT,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "TenantService_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "public"."CustomPackage" (
++    "id" TEXT NOT NULL,
++    "tenantId" TEXT NOT NULL,
++    "name" TEXT,
++    "notes" TEXT,
++    "services" TEXT[],
++    "status" TEXT NOT NULL DEFAULT 'pending',
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CustomPackage_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "public"."ServiceHealthLog" (
++    "id" TEXT NOT NULL,
++    "serviceKey" TEXT NOT NULL,
++    "status" TEXT NOT NULL,
++    "message" TEXT,
++    "checkedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "ServiceHealthLog_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE UNIQUE INDEX "ServiceDefinition_key_key" ON "public"."ServiceDefinition"("key");
++
++-- CreateIndex
++CREATE INDEX "ServiceDefinition_category_idx" ON "public"."ServiceDefinition"("category");
++
++-- CreateIndex
++CREATE INDEX "TenantService_tenantId_idx" ON "public"."TenantService"("tenantId");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "TenantService_tenantId_serviceKey_key" ON "public"."TenantService"("tenantId", "serviceKey");
++
++-- CreateIndex
++CREATE INDEX "CustomPackage_tenantId_idx" ON "public"."CustomPackage"("tenantId");
++
++-- CreateIndex
++CREATE INDEX "CustomPackage_status_idx" ON "public"."CustomPackage"("status");
++
++-- CreateIndex
++CREATE INDEX "ServiceHealthLog_serviceKey_idx" ON "public"."ServiceHealthLog"("serviceKey");
++
++-- CreateIndex
++CREATE INDEX "ServiceHealthLog_checkedAt_idx" ON "public"."ServiceHealthLog"("checkedAt");
++
++-- AddForeignKey
++ALTER TABLE "public"."TenantService" ADD CONSTRAINT "TenantService_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "public"."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "public"."TenantService" ADD CONSTRAINT "TenantService_serviceKey_fkey" FOREIGN KEY ("serviceKey") REFERENCES "public"."ServiceDefinition"("key") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "public"."CustomPackage" ADD CONSTRAINT "CustomPackage_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "public"."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "public"."ServiceHealthLog" ADD CONSTRAINT "ServiceHealthLog_serviceKey_fkey" FOREIGN KEY ("serviceKey") REFERENCES "public"."ServiceDefinition"("key") ON DELETE CASCADE ON UPDATE CASCADE;
+diff --git a/apps/api/prisma/schema.prisma b/apps/api/prisma/schema.prisma
+index daa7992..dfb9b51 100644
+--- a/apps/api/prisma/schema.prisma
++++ b/apps/api/prisma/schema.prisma
+@@ -46,6 +46,8 @@ model Tenant {
+   apiKeys             ApiKey[]
+   subscription        Subscription?
+   integrationSecrets  IntegrationSecret[]
++  tenantServices      TenantService[]
++  customPackages      CustomPackage[]
+ 
+   @@schema("public")
+ }
+@@ -555,25 +557,26 @@ model Channel {
+ // ─── Plans & Subscriptions ──────────────────────────────────────────────────
+ 
+ model Plan {
+-  id              String   @id @default(uuid())
+-  name            String
+-  slug            String   @unique
+-  description     String?
+-  price           Float
+-  yearlyPrice     Float
+-  maxUsers        Int
+-  maxLeads        Int
+-  maxAutomations  Int      @default(-1)
+-  maxApiCalls     Int      @default(-1)
+-  features        Json     @default("[]")
+-  isActive        Boolean  @default(true)
+-  isPopular       Boolean  @default(false)
+-  isArchived      Boolean  @default(false)
+-  trialDays       Int      @default(14)
+-  sortOrder       Int      @default(0)
+-  metadata        Json?
+-  createdAt       DateTime @default(now())
+-  updatedAt       DateTime @updatedAt
++  id               String   @id @default(uuid())
++  name             String
++  slug             String   @unique
++  description      String?
++  price            Float
++  yearlyPrice      Float
++  maxUsers         Int
++  maxLeads         Int
++  maxAutomations   Int      @default(-1)
++  maxApiCalls      Int      @default(-1)
++  features         Json     @default("[]")
++  includedServices String[]
++  isActive         Boolean  @default(true)
++  isPopular        Boolean  @default(false)
++  isArchived       Boolean  @default(false)
++  trialDays        Int      @default(14)
++  sortOrder        Int      @default(0)
++  metadata         Json?
++  createdAt        DateTime @default(now())
++  updatedAt        DateTime @updatedAt
+ 
+   subscriptions Subscription[]
+ 
+@@ -769,3 +772,73 @@ model IntegrationSecret {
+   @@index([tenantId, provider])
+   @@schema("public")
+ }
++
++// ─── Service Control ──────────────────────────────────────────────────────────
++
++model ServiceDefinition {
++  id              String   @id @default(uuid())
++  key             String   @unique
++  name            String
++  category        String
++  isEnabled       Boolean  @default(true)
++  isMaintenance   Boolean  @default(false)
++  maintenanceMsg  String?
++  isCore          Boolean  @default(false)
++  createdAt       DateTime @default(now())
++  updatedAt       DateTime @updatedAt
++
++  tenantServices  TenantService[]
++  healthLogs      ServiceHealthLog[]
++
++  @@index([category])
++  @@schema("public")
++}
++
++model TenantService {
++  id                   String   @id @default(uuid())
++  tenantId             String
++  serviceKey           String
++  isEnabled            Boolean  @default(true)
++  overriddenBySuperAdmin Boolean @default(false)
++  disabledReason       String?
++  createdAt            DateTime @default(now())
++  updatedAt            DateTime @updatedAt
++
++  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
++  service    ServiceDefinition @relation(fields: [serviceKey], references: [key], onDelete: Cascade)
++
++  @@unique([tenantId, serviceKey])
++  @@index([tenantId])
++  @@schema("public")
++}
++
++model CustomPackage {
++  id        String   @id @default(uuid())
++  tenantId  String
++  name      String?
++  notes     String?
++  services  String[]
++  status    String   @default("pending")
++  createdAt DateTime @default(now())
++  updatedAt DateTime @updatedAt
++
++  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
++
++  @@index([tenantId])
++  @@index([status])
++  @@schema("public")
++}
++
++model ServiceHealthLog {
++  id         String   @id @default(uuid())
++  serviceKey String
++  status     String
++  message    String?
++  checkedAt  DateTime @default(now())
++
++  service ServiceDefinition @relation(fields: [serviceKey], references: [key], onDelete: Cascade)
++
++  @@index([serviceKey])
++  @@index([checkedAt])
++  @@schema("public")
++}
+diff --git a/apps/api/prisma/seed.ts b/apps/api/prisma/seed.ts
+index c71e4f9..30eadc9 100644
+--- a/apps/api/prisma/seed.ts
++++ b/apps/api/prisma/seed.ts
+@@ -173,24 +173,83 @@ async function main() {
+   const growthFeatures = ['Everything in Starter', 'Automation Engine', 'All Integrations', 'WhatsApp & IVR', 'Advanced Analytics', 'Custom Fields', 'Priority Support'];
+   const enterpriseFeatures = ['Everything in Growth', 'Unlimited Users', 'Unlimited Leads', 'Dedicated Account Manager', 'SLA Support', 'Custom Integrations', 'On-premise Option'];
+ 
++  const starterIncluded = ['leads', 'pipeline', 'followups', 'tasks', 'contacts', 'basic_analytics', 'email', 'import_export'];
++  const growthIncluded = [...starterIncluded, 'service_boards', 'publishers', 'whatsapp', 'meta_ads', 'google_ads', 'indiamart', 'automation_engine', 'advanced_analytics', 'audit_logs', 'api_access'];
++  const enterpriseIncluded = [...growthIncluded, 'ivr_dialer', 'sms', 'justdial', 'acres99', 'housing', 'tradeindia', 'zapier', 'call_insights', 'workflow_builder', 'ai_scoring', 'ai_email', 'ai_chatbot'];
++
+   const starterPlan = await prisma.plan.upsert({
+     where: { slug: 'starter' },
+-    update: {},
+-    create: { id: randomUUID(), name: 'Starter', slug: 'starter', price: 1999, yearlyPrice: 19990, maxUsers: 5, maxLeads: 1000, features: starterFeatures, sortOrder: 0 },
++    update: { includedServices: starterIncluded },
++    create: { id: randomUUID(), name: 'Starter', slug: 'starter', price: 1999, yearlyPrice: 19990, maxUsers: 5, maxLeads: 1000, features: starterFeatures, includedServices: starterIncluded, sortOrder: 0 },
+   });
+ 
+   const growthPlan = await prisma.plan.upsert({
+     where: { slug: 'growth' },
+-    update: {},
+-    create: { id: randomUUID(), name: 'Growth', slug: 'growth', price: 1799, yearlyPrice: 17990, maxUsers: 20, maxLeads: 10000, features: growthFeatures, isPopular: true, sortOrder: 1 },
++    update: { includedServices: growthIncluded },
++    create: { id: randomUUID(), name: 'Growth', slug: 'growth', price: 1799, yearlyPrice: 17990, maxUsers: 20, maxLeads: 10000, features: growthFeatures, includedServices: growthIncluded, isPopular: true, sortOrder: 1 },
+   });
+ 
+   const enterprisePlan = await prisma.plan.upsert({
+     where: { slug: 'enterprise' },
++    update: { includedServices: enterpriseIncluded },
++    create: { id: randomUUID(), name: 'Enterprise', slug: 'enterprise', price: 1599, yearlyPrice: 15990, maxUsers: -1, maxLeads: -1, features: enterpriseFeatures, includedServices: enterpriseIncluded, sortOrder: 2 },
++  });
++
++  await prisma.plan.upsert({
++    where: { slug: 'custom' },
+     update: {},
+-    create: { id: randomUUID(), name: 'Enterprise', slug: 'enterprise', price: 1599, yearlyPrice: 15990, maxUsers: -1, maxLeads: -1, features: enterpriseFeatures, sortOrder: 2 },
++    create: { id: randomUUID(), name: 'Custom', slug: 'custom', price: 0, yearlyPrice: 0, maxUsers: -1, maxLeads: -1, features: ['Custom feature set', 'Configured by our team', 'Contact us for pricing'], includedServices: [], sortOrder: 3 },
+   });
+ 
++  // ── Service Definitions ───────────────────────────────────────────────────
++  const serviceDefinitions = [
++    // CRM — core
++    { key: 'leads', name: 'Leads', category: 'crm', isCore: true },
++    { key: 'pipeline', name: 'Pipeline', category: 'crm', isCore: true },
++    { key: 'followups', name: 'Follow-ups', category: 'crm', isCore: true },
++    { key: 'tasks', name: 'Tasks', category: 'crm', isCore: true },
++    { key: 'contacts', name: 'Contacts', category: 'crm', isCore: true },
++    { key: 'service_boards', name: 'Service Boards', category: 'crm', isCore: false },
++    { key: 'publishers', name: 'Publishers', category: 'crm', isCore: false },
++    // Communication
++    { key: 'whatsapp', name: 'WhatsApp', category: 'communication', isCore: false },
++    { key: 'email', name: 'Email', category: 'communication', isCore: true },
++    { key: 'ivr_dialer', name: 'IVR Dialer', category: 'communication', isCore: false },
++    { key: 'sms', name: 'SMS', category: 'communication', isCore: false },
++    // Integration
++    { key: 'meta_ads', name: 'Meta Ads', category: 'integration', isCore: false },
++    { key: 'google_ads', name: 'Google Ads', category: 'integration', isCore: false },
++    { key: 'indiamart', name: 'IndiaMART', category: 'integration', isCore: false },
++    { key: 'justdial', name: 'JustDial', category: 'integration', isCore: false },
++    { key: 'acres99', name: '99Acres', category: 'integration', isCore: false },
++    { key: 'housing', name: 'Housing.com', category: 'integration', isCore: false },
++    { key: 'tradeindia', name: 'TradeIndia', category: 'integration', isCore: false },
++    { key: 'zapier', name: 'Zapier', category: 'integration', isCore: false },
++    // Analytics
++    { key: 'basic_analytics', name: 'Basic Analytics', category: 'analytics', isCore: true },
++    { key: 'advanced_analytics', name: 'Advanced Analytics', category: 'analytics', isCore: false },
++    { key: 'call_insights', name: 'Call Insights', category: 'analytics', isCore: false },
++    // Automation
++    { key: 'automation_engine', name: 'Automation Engine', category: 'automation', isCore: false },
++    { key: 'workflow_builder', name: 'Workflow Builder', category: 'automation', isCore: false },
++    // AI
++    { key: 'ai_scoring', name: 'AI Scoring', category: 'ai', isCore: false },
++    { key: 'ai_email', name: 'AI Email', category: 'ai', isCore: false },
++    { key: 'ai_chatbot', name: 'AI Chatbot', category: 'ai', isCore: false },
++    // Security/Data
++    { key: 'api_access', name: 'API Access', category: 'security', isCore: false },
++    { key: 'audit_logs', name: 'Audit Logs', category: 'security', isCore: false },
++    { key: 'import_export', name: 'Import/Export', category: 'security', isCore: true },
++  ];
++
++  for (const svc of serviceDefinitions) {
++    await prisma.serviceDefinition.upsert({
++      where: { key: svc.key },
++      update: { name: svc.name, category: svc.category, isCore: svc.isCore },
++      create: { id: randomUUID(), key: svc.key, name: svc.name, category: svc.category, isCore: svc.isCore },
++    });
++  }
++
+   // Attach subscription to demo tenant
+   await prisma.subscription.upsert({
+     where: { tenantId: tenant.id },
+diff --git a/apps/api/src/lib/syncTenantServices.ts b/apps/api/src/lib/syncTenantServices.ts
+new file mode 100644
+index 0000000..a242232
+--- /dev/null
++++ b/apps/api/src/lib/syncTenantServices.ts
+@@ -0,0 +1,29 @@
++import { randomUUID } from 'crypto';
++
++/**
++ * Creates/updates TenantService records for a tenant based on their plan's
++ * includedServices array. Core services are enabled for everyone; plan-specific
++ * services are enabled based on what's in includedServices.
++ */
++export async function syncTenantServices(tx: any, tenantId: string, planId: string) {
++  const [allServices, plan] = await Promise.all([
++    tx.serviceDefinition.findMany({ where: { isEnabled: true } }),
++    tx.plan.findUnique({ where: { id: planId }, select: { includedServices: true } }),
++  ]);
++
++  const included: string[] = plan?.includedServices ?? [];
++
++  for (const svc of allServices) {
++    const shouldEnable = svc.isCore || included.includes(svc.key);
++    await tx.tenantService.upsert({
++      where: { tenantId_serviceKey: { tenantId, serviceKey: svc.key } },
++      update: {},
++      create: {
++        id: randomUUID(),
++        tenantId,
++        serviceKey: svc.key,
++        isEnabled: shouldEnable,
++      },
++    });
++  }
++}
+diff --git a/apps/api/src/routes/analytics.ts b/apps/api/src/routes/analytics.ts
+index 769630c..79c9369 100644
+--- a/apps/api/src/routes/analytics.ts
++++ b/apps/api/src/routes/analytics.ts
+@@ -144,4 +144,32 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
+     })));
+     return { success: true, data };
+   });
++
++  fastify.get('/dashboard/service-status', async (req) => {
++    const user = req.user as any;
++    const tenantId = user.tenantId;
++    const tenantServices = await fastify.prisma.tenantService.findMany({
++      where: { tenantId },
++      include: { service: true },
++    });
++    const services = tenantServices.map((ts: any) => ({
++      key: ts.serviceKey,
++      name: ts.service.name,
++      category: ts.service.category,
++      isCore: ts.service.isCore,
++      effectiveEnabled: ts.service.isEnabled && ts.isEnabled,
++      isMaintenance: ts.service.isMaintenance,
++      maintenanceMsg: ts.service.maintenanceMsg,
++      disabledReason: ts.disabledReason,
++    }));
++    const hasIssues = services.filter((s: any) => !s.effectiveEnabled || s.isMaintenance);
++    return {
++      success: true,
++      data: {
++        services,
++        summary: hasIssues.length === 0 ? 'All systems operational' : `${hasIssues.length} service${hasIssues.length !== 1 ? 's' : ''} affected`,
++        hasIssues: hasIssues.length > 0,
++      },
++    };
++  });
+ }
+\ No newline at end of file
+diff --git a/apps/api/src/routes/public.ts b/apps/api/src/routes/public.ts
+index b44e3d8..2857bac 100644
+--- a/apps/api/src/routes/public.ts
++++ b/apps/api/src/routes/public.ts
+@@ -6,6 +6,7 @@ import { FastifyInstance } from 'fastify';
+ import { randomUUID } from 'crypto';
+ import bcrypt from 'bcryptjs';
+ import { z } from 'zod';
++import { syncTenantServices } from '../lib/syncTenantServices';
+ 
+ const RegisterSchema = z.object({
+   // Step 1 — Company
+@@ -145,6 +146,13 @@ export async function publicRoutes(fastify: FastifyInstance) {
+       return [tenant, user];
+     });
+ 
++    // Sync tenant services based on plan
++    try {
++      await fastify.prisma.$transaction(async (tx: any) => {
++        await syncTenantServices(tx, tenant.id, plan.id);
++      });
++    } catch { /* non-fatal */ }
++
+     // Issue JWT tokens
+     const accessToken = fastify.jwt.sign(
+       { sub: user.id, tenantId: tenant.id, role: user.role },
+diff --git a/apps/api/src/routes/settings.ts b/apps/api/src/routes/settings.ts
+index 8981370..fdc0062 100644
+--- a/apps/api/src/routes/settings.ts
++++ b/apps/api/src/routes/settings.ts
+@@ -128,4 +128,29 @@ export async function settingsRoutes(fastify: FastifyInstance) {
+     });
+     return { success: true, data: sub };
+   });
++
++  // Tenant service status
++  fastify.get('/settings/my-services', async (req) => {
++    const user = req.user as any;
++    const tenantServices = await fastify.prisma.tenantService.findMany({
++      where: { tenantId: user.tenantId },
++      include: { service: true },
++    });
++    return {
++      success: true,
++      data: tenantServices.map((ts: any) => ({
++        key: ts.serviceKey,
++        name: ts.service.name,
++        category: ts.service.category,
++        isCore: ts.service.isCore,
++        globalEnabled: ts.service.isEnabled,
++        tenantEnabled: ts.isEnabled,
++        isMaintenance: ts.service.isMaintenance,
++        maintenanceMsg: ts.service.maintenanceMsg,
++        overridden: ts.overriddenBySuperAdmin,
++        disabledReason: ts.disabledReason,
++        effectiveEnabled: ts.service.isEnabled && ts.isEnabled,
++      })),
++    };
++  });
+ }
+diff --git a/apps/api/src/routes/super-admin.ts b/apps/api/src/routes/super-admin.ts
+index c334b9a..4902dde 100644
+--- a/apps/api/src/routes/super-admin.ts
++++ b/apps/api/src/routes/super-admin.ts
+@@ -12,6 +12,7 @@ import { FastifyInstance } from 'fastify';
+ import { randomUUID } from 'crypto';
+ import bcrypt from 'bcryptjs';
+ import { requireSuperAdmin, signSuperAdminToken } from '../middleware/superAdmin';
++import { syncTenantServices } from '../lib/syncTenantServices';
+ 
+ export async function superAdminRoutes(fastify: FastifyInstance) {
+   // ── PUBLIC scope: Login only (NO auth required) ────────────────────────────
+@@ -204,6 +205,7 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
+               currentPeriodEnd: new Date(now.getTime() + 30 * 86400000),
+             },
+           });
++          await syncTenantServices(tx, t.id, plan.id);
+         }
+         if (body.adminEmail && body.adminName) {
+           const ph = await bcrypt.hash('Welcome@123', 10);
+@@ -308,6 +310,12 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
+           currentPeriodStart: now, currentPeriodEnd: periodEnd,
+         },
+       });
++      // Sync services for new plan
++      try {
++        await protected_.prisma.$transaction(async (tx: any) => {
++          await syncTenantServices(tx, id, planId);
++        });
++      } catch { /* non-fatal */ }
+       return { success: true, data: sub };
+     });
+ 
+@@ -323,20 +331,23 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
+     });
+ 
+     protected_.post('/super-admin/plans', async (req, reply) => {
+-      const body = req.body as {
+-        name: string; slug: string; price: number; yearlyPrice: number;
+-        maxUsers: number; maxLeads: number; features: string[];
+-        isPopular?: boolean; sortOrder?: number;
+-      };
++      const body = req.body as Record<string, unknown>;
+       const plan = await protected_.prisma.plan.create({
+         data: {
+           id: randomUUID(),
+-          name: body.name, slug: body.slug,
+-          price: body.price, yearlyPrice: body.yearlyPrice,
+-          maxUsers: body.maxUsers, maxLeads: body.maxLeads,
+-          features: body.features,
+-          isPopular: body.isPopular || false,
+-          sortOrder: body.sortOrder || 0,
++          name: String(body.name || ''),
++          slug: String(body.slug || ''),
++          description: body.description ? String(body.description) : null,
++          price: Number(body.price || 0),
++          yearlyPrice: Number(body.yearlyPrice || 0),
++          maxUsers: Number(body.maxUsers || 5),
++          maxLeads: Number(body.maxLeads || 1000),
++          maxAutomations: body.maxAutomations !== undefined ? Number(body.maxAutomations) : -1,
++          maxApiCalls: body.maxApiCalls !== undefined ? Number(body.maxApiCalls) : -1,
++          features: Array.isArray(body.features) ? body.features as string[] : [],
++          includedServices: Array.isArray(body.includedServices) ? body.includedServices as string[] : [],
++          isPopular: Boolean(body.isPopular),
++          sortOrder: Number(body.sortOrder || 0),
+         },
+       });
+       reply.code(201);
+@@ -345,8 +356,23 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
+ 
+     protected_.put('/super-admin/plans/:id', async (req) => {
+       const { id } = req.params as { id: string };
+-      const body = req.body as Partial<{ name: string; price: number; yearlyPrice: number; maxUsers: number; maxLeads: number; features: string[]; isActive: boolean; isPopular: boolean; sortOrder: number }>;
+-      const plan = await protected_.prisma.plan.update({ where: { id }, data: body });
++      const body = req.body as Record<string, unknown>;
++      const updateData: Record<string, unknown> = {};
++      if (body.name !== undefined) updateData.name = String(body.name);
++      if (body.slug !== undefined) updateData.slug = String(body.slug);
++      if (body.description !== undefined) updateData.description = body.description ? String(body.description) : null;
++      if (body.price !== undefined) updateData.price = Number(body.price);
++      if (body.yearlyPrice !== undefined) updateData.yearlyPrice = Number(body.yearlyPrice);
++      if (body.maxUsers !== undefined) updateData.maxUsers = Number(body.maxUsers);
++      if (body.maxLeads !== undefined) updateData.maxLeads = Number(body.maxLeads);
++      if (body.maxAutomations !== undefined) updateData.maxAutomations = Number(body.maxAutomations);
++      if (body.maxApiCalls !== undefined) updateData.maxApiCalls = Number(body.maxApiCalls);
++      if (body.features !== undefined) updateData.features = Array.isArray(body.features) ? body.features : [];
++      if (body.includedServices !== undefined) updateData.includedServices = Array.isArray(body.includedServices) ? body.includedServices : [];
++      if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive);
++      if (body.isPopular !== undefined) updateData.isPopular = Boolean(body.isPopular);
++      if (body.sortOrder !== undefined) updateData.sortOrder = Number(body.sortOrder);
++      const plan = await protected_.prisma.plan.update({ where: { id }, data: updateData });
+       return { success: true, data: plan };
+     });
+ 
+@@ -632,5 +658,174 @@ export async function superAdminRoutes(fastify: FastifyInstance) {
+       const updated = await protected_.prisma.subscription.update({ where: { tenantId: id }, data: { trialEndsAt: newTrialEnd } });
+       return { success: true, data: updated };
+     });
++
++    // ── Service Definitions (Global) ───────────────────────────────────────
++    protected_.get('/super-admin/services', async () => {
++      const services = await protected_.prisma.serviceDefinition.findMany({ orderBy: [{ category: 'asc' }, { name: 'asc' }] });
++      return { success: true, data: services };
++    });
++
++    protected_.put('/super-admin/services/:key/toggle', async (req) => {
++      const { key } = req.params as { key: string };
++      const svc = await protected_.prisma.serviceDefinition.findUnique({ where: { key } });
++      if (!svc || svc.isCore) return { success: false, error: { message: 'Cannot toggle core service' } };
++      const updated = await protected_.prisma.serviceDefinition.update({ where: { key }, data: { isEnabled: !svc.isEnabled } });
++      return { success: true, data: updated };
++    });
++
++    protected_.put('/super-admin/services/:key/maintenance', async (req) => {
++      const { key } = req.params as { key: string };
++      const { isMaintenance, maintenanceMsg } = req.body as { isMaintenance: boolean; maintenanceMsg?: string };
++      const updated = await protected_.prisma.serviceDefinition.update({
++        where: { key },
++        data: { isMaintenance: Boolean(isMaintenance), maintenanceMsg: maintenanceMsg || null },
++      });
++      return { success: true, data: updated };
++    });
++
++    protected_.get('/super-admin/services/health', async () => {
++      let dbHealthy = true;
++      try { await protected_.prisma.$queryRaw`SELECT 1`; } catch { dbHealthy = false; }
++      let redisHealthy = true;
++      try {
++        const { redis } = await import('../lib/redis');
++        await redis.ping();
++      } catch { redisHealthy = false; }
++
++      const services = await protected_.prisma.serviceDefinition.findMany();
++      const results = services.map((s: any) => ({
++        key: s.key, name: s.name, category: s.category,
++        status: !s.isEnabled ? 'disabled' : s.isMaintenance ? 'maintenance' : (s.key === 'leads' || s.key === 'pipeline') && !dbHealthy ? 'degraded' : 'healthy',
++        message: s.isMaintenance ? s.maintenanceMsg : undefined,
++      }));
++
++      // Log health check
++      await protected_.prisma.serviceHealthLog.createMany({
++        data: results.map((r: any) => ({ id: randomUUID(), serviceKey: r.key, status: r.status, message: r.message || null })),
++        skipDuplicates: true,
++      });
++
++      return { success: true, data: { services: results, infrastructure: { database: dbHealthy ? 'healthy' : 'degraded', redis: redisHealthy ? 'healthy' : 'degraded' }, checkedAt: new Date().toISOString() } };
++    });
++
++    protected_.get('/super-admin/services/health/logs', async () => {
++      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
++      const logs = await protected_.prisma.serviceHealthLog.findMany({
++        where: { checkedAt: { gte: since } },
++        orderBy: { checkedAt: 'desc' },
++        take: 500,
++      });
++      return { success: true, data: logs };
++    });
++
++    // ── Company Services (per-tenant overrides) ────────────────────────────
++    protected_.get('/super-admin/companies/:id/services', async (req) => {
++      const { id } = req.params as { id: string };
++      const [allServices, tenantServices] = await Promise.all([
++        protected_.prisma.serviceDefinition.findMany({ orderBy: [{ category: 'asc' }, { name: 'asc' }] }),
++        protected_.prisma.tenantService.findMany({ where: { tenantId: id } }),
++      ]);
++      const tsMap = new Map(tenantServices.map((ts: any) => [ts.serviceKey, ts]));
++      const merged = allServices.map((s: any) => ({
++        ...s,
++        tenantEnabled: tsMap.has(s.key) ? (tsMap.get(s.key) as any).isEnabled : null,
++        overriddenBySuperAdmin: tsMap.has(s.key) ? (tsMap.get(s.key) as any).overriddenBySuperAdmin : false,
++        disabledReason: tsMap.has(s.key) ? (tsMap.get(s.key) as any).disabledReason : null,
++      }));
++      return { success: true, data: merged };
++    });
++
++    protected_.put('/super-admin/companies/:id/services/:key', async (req) => {
++      const { id, key } = req.params as { id: string; key: string };
++      const { isEnabled, disabledReason } = req.body as { isEnabled: boolean; disabledReason?: string };
++      const ts = await protected_.prisma.tenantService.upsert({
++        where: { tenantId_serviceKey: { tenantId: id, serviceKey: key } },
++        update: { isEnabled: Boolean(isEnabled), overriddenBySuperAdmin: true, disabledReason: disabledReason || null },
++        create: { id: randomUUID(), tenantId: id, serviceKey: key, isEnabled: Boolean(isEnabled), overriddenBySuperAdmin: true, disabledReason: disabledReason || null },
++      });
++      return { success: true, data: ts };
++    });
++
++    protected_.post('/super-admin/companies/:id/services/reset', async (req) => {
++      const { id } = req.params as { id: string };
++      const sub = await protected_.prisma.subscription.findUnique({ where: { tenantId: id }, select: { planId: true } });
++      if (!sub) return { success: false, error: { message: 'No subscription found' } };
++      await protected_.prisma.$transaction(async (tx: any) => {
++        await tx.tenantService.deleteMany({ where: { tenantId: id } });
++        await syncTenantServices(tx, id, sub.planId);
++      });
++      return { success: true, data: null };
++    });
++
++    protected_.post('/super-admin/companies/:id/services/bulk', async (req) => {
++      const { id } = req.params as { id: string };
++      const { services } = req.body as { services: Array<{ key: string; isEnabled: boolean; disabledReason?: string }> };
++      await Promise.all(services.map((s: { key: string; isEnabled: boolean; disabledReason?: string }) =>
++        protected_.prisma.tenantService.upsert({
++          where: { tenantId_serviceKey: { tenantId: id, serviceKey: s.key } },
++          update: { isEnabled: Boolean(s.isEnabled), overriddenBySuperAdmin: true, disabledReason: s.disabledReason || null },
++          create: { id: randomUUID(), tenantId: id, serviceKey: s.key, isEnabled: Boolean(s.isEnabled), overriddenBySuperAdmin: true, disabledReason: s.disabledReason || null },
++        })
++      ));
++      return { success: true, data: null };
++    });
++
++    // ── Custom Packages ────────────────────────────────────────────────────
++    protected_.get('/super-admin/companies/:id/custom-package', async (req, reply) => {
++      const { id } = req.params as { id: string };
++      const pkg = await protected_.prisma.customPackage.findFirst({ where: { tenantId: id }, orderBy: { createdAt: 'desc' } });
++      if (!pkg) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'No custom package' } });
++      return { success: true, data: pkg };
++    });
++
++    protected_.post('/super-admin/companies/:id/custom-package', async (req, reply) => {
++      const { id } = req.params as { id: string };
++      const { name, notes, services } = req.body as { name?: string; notes?: string; services: string[] };
++      const pkg = await protected_.prisma.$transaction(async (tx: any) => {
++        const p = await tx.customPackage.create({
++          data: { id: randomUUID(), tenantId: id, name: name || null, notes: notes || null, services, status: 'approved' },
++        });
++        // Enable selected services
++        const allServices = await tx.serviceDefinition.findMany({ select: { key: true } });
++        for (const svc of allServices) {
++          await tx.tenantService.upsert({
++            where: { tenantId_serviceKey: { tenantId: id, serviceKey: svc.key } },
++            update: { isEnabled: services.includes(svc.key), overriddenBySuperAdmin: true },
++            create: { id: randomUUID(), tenantId: id, serviceKey: svc.key, isEnabled: services.includes(svc.key), overriddenBySuperAdmin: true },
++          });
++        }
++        // Send in-app notification to tenant admin
++        const adminUser = await tx.user.findFirst({ where: { tenantId: id, role: 'admin' }, select: { id: true } });
++        if (adminUser) {
++          await tx.notification.create({
++            data: {
++              id: randomUUID(), tenantId: id, userId: adminUser.id,
++              title: 'Custom Package Configured',
++              body: 'Your custom package has been configured by our team. Your selected services are now active.',
++              type: 'custom_package',
++            },
++          });
++        }
++        return p;
++      });
++      reply.code(201);
++      return { success: true, data: pkg };
++    });
++
++    protected_.delete('/super-admin/companies/:id/custom-package', async (req) => {
++      const { id } = req.params as { id: string };
++      await protected_.prisma.customPackage.deleteMany({ where: { tenantId: id } });
++      return { success: true, data: null };
++    });
++
++    // ── Pending Custom Package Requests ────────────────────────────────────
++    protected_.get('/super-admin/custom-packages/pending', async () => {
++      const packages = await protected_.prisma.customPackage.findMany({
++        where: { status: 'pending' },
++        include: { tenant: { select: { id: true, name: true } } },
++        orderBy: { createdAt: 'desc' },
++      });
++      return { success: true, data: packages };
++    });
+   });
+ }
+\ No newline at end of file
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 5172880..6ab8a42 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -42,6 +42,8 @@ import { SuperAdminUsers } from './pages/super-admin/SuperAdminUsers'
+ import { SuperAdminFeatureFlags } from './pages/super-admin/SuperAdminFeatureFlags'
+ import { SuperAdminMonitoring } from './pages/super-admin/SuperAdminMonitoring'
+ import { SuperAdminAuditLogs } from './pages/super-admin/SuperAdminAuditLogs'
++import { SuperAdminServices } from './pages/super-admin/SuperAdminServices'
++import { SuperAdminCustomPackage } from './pages/super-admin/SuperAdminCustomPackage'
+ 
+ import { ToastProvider } from './components/ui/toast'
+ import { useAuthStore } from './store/auth'
+@@ -122,6 +124,8 @@ export default function App() {
+           <Route path="audit-logs" element={<SuperAdminAuditLogs />} />
+           <Route path="monitoring" element={<SuperAdminMonitoring />} />
+           <Route path="settings" element={<SuperAdminSettings />} />
++          <Route path="services" element={<SuperAdminServices />} />
++          <Route path="companies/:id/custom-package" element={<SuperAdminCustomPackage />} />
+         </Route>
+ 
+         <Route path="*" element={<Navigate to="/" replace />} />
+diff --git a/apps/web/src/components/layout/AppLayout.tsx b/apps/web/src/components/layout/AppLayout.tsx
+index a4441ff..9c3bfa6 100644
+--- a/apps/web/src/components/layout/AppLayout.tsx
++++ b/apps/web/src/components/layout/AppLayout.tsx
+@@ -1,6 +1,9 @@
++import { useState, useEffect } from 'react'
+ import { Outlet, useLocation } from 'react-router-dom'
++import { X, AlertTriangle } from 'lucide-react'
+ import { Sidebar } from './Sidebar'
+ import { Header } from './Header'
++import { api } from '../../lib/api'
+ 
+ const pageTitles: Record<string, string> = {
+   '/dashboard': 'Dashboard',
+@@ -25,16 +28,71 @@ const pageTitles: Record<string, string> = {
+   '/profile': 'Profile',
+ }
+ 
++interface ServiceStatus {
++  key: string
++  name: string
++  isMaintenance: boolean
++  maintenanceMsg: string | null
++  effectiveEnabled: boolean
++}
++
++function MaintenanceBanner({ services, onDismiss }: { services: ServiceStatus[]; onDismiss: (key: string) => void }) {
++  const maintenanceServices = services.filter(s => s.isMaintenance && s.effectiveEnabled)
++  if (maintenanceServices.length === 0) return null
++  return (
++    <div className="flex flex-col gap-1">
++      {maintenanceServices.map(svc => (
++        <div key={svc.key} className="flex items-center gap-3 px-4 py-2 bg-warning/10 border-b border-warning/20 text-xs text-warning">
++          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
++          <span className="flex-1">
++            <span className="font-medium">{svc.name}</span> is under maintenance.{' '}
++            {svc.maintenanceMsg && <span className="text-warning/80">{svc.maintenanceMsg}</span>}
++          </span>
++          <button onClick={() => onDismiss(svc.key)} className="hover:opacity-70 shrink-0">
++            <X className="h-3.5 w-3.5" />
++          </button>
++        </div>
++      ))}
++    </div>
++  )
++}
+ 
+ export function AppLayout() {
+   const { pathname } = useLocation()
+   const title = pageTitles[pathname] || pageTitles[Object.keys(pageTitles).find(k => k !== '/' && pathname.startsWith(k)) || ''] || ''
++  const [serviceStatuses, setServiceStatuses] = useState<ServiceStatus[]>([])
++  const [dismissed, setDismissed] = useState<string[]>([])
++
++  useEffect(() => {
++    const fetchStatus = async () => {
++      try {
++        const res = await api.get('/settings/my-services')
++        setServiceStatuses(res.data.data || [])
++      } catch { /* non-fatal */ }
++    }
++    fetchStatus()
++  }, [])
++
++  const DISMISSED_KEY = 'maintenance_dismissed'
++  useEffect(() => {
++    const stored = sessionStorage.getItem(DISMISSED_KEY)
++    if (stored) setDismissed(JSON.parse(stored))
++  }, [])
++
++  const handleDismiss = (key: string) => {
++    const newDismissed = [...dismissed, key]
++    setDismissed(newDismissed)
++    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(newDismissed))
++  }
++
++  const visibleServices = serviceStatuses.filter(s => !dismissed.includes(s.key))
+ 
+   return (
+     <div className="flex h-screen bg-bg overflow-hidden">
+       <Sidebar />
+       <div className="flex flex-col flex-1 min-w-0">
+         <Header title={title} />
++        <MaintenanceBanner services={visibleServices} onDismiss={handleDismiss} />
+         <main className="flex-1 overflow-y-auto">
+           <Outlet />
+         </main>
+diff --git a/apps/web/src/components/layout/SuperAdminLayout.tsx b/apps/web/src/components/layout/SuperAdminLayout.tsx
+index b6bb409..b7e8ef4 100644
+--- a/apps/web/src/components/layout/SuperAdminLayout.tsx
++++ b/apps/web/src/components/layout/SuperAdminLayout.tsx
+@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+ import { motion } from 'framer-motion'
+ import {
+   LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut,
+-  Shield, Users, BarChart3, Flag, Activity, ScrollText
++  Shield, Users, BarChart3, Flag, Activity, ScrollText, Layers
+ } from 'lucide-react'
+ import { useSuperAdminStore } from '../../store/superAdmin'
+ import { cn } from '../../lib/utils'
+@@ -28,6 +28,7 @@ const navGroups = [
+     items: [
+       { label: 'Users', icon: Users, href: '/super-admin/users' },
+       { label: 'Feature Flags', icon: Flag, href: '/super-admin/feature-flags' },
++      { label: 'Services & Integrations', icon: Layers, href: '/super-admin/services' },
+     ],
+   },
+   {
+diff --git a/apps/web/src/components/ui/ServiceDisabledPlaceholder.tsx b/apps/web/src/components/ui/ServiceDisabledPlaceholder.tsx
+new file mode 100644
+index 0000000..2350ec1
+--- /dev/null
++++ b/apps/web/src/components/ui/ServiceDisabledPlaceholder.tsx
+@@ -0,0 +1,22 @@
++import { Lock } from 'lucide-react'
++
++interface Props {
++  serviceName?: string
++  message?: string
++}
++
++export function ServiceDisabledPlaceholder({ serviceName, message }: Props) {
++  return (
++    <div className="flex flex-col items-center justify-center min-h-[40vh] p-8 text-center">
++      <div className="h-14 w-14 rounded-full bg-text-muted/10 flex items-center justify-center mb-4">
++        <Lock className="h-6 w-6 text-text-muted" />
++      </div>
++      <h3 className="font-heading font-semibold text-text-primary mb-2">
++        {serviceName ? `${serviceName} is not available` : 'Feature not available'}
++      </h3>
++      <p className="text-text-secondary text-sm max-w-sm">
++        {message || 'Contact support to enable this feature for your workspace.'}
++      </p>
++    </div>
++  )
++}
+diff --git a/apps/web/src/hooks/useServiceEnabled.ts b/apps/web/src/hooks/useServiceEnabled.ts
+new file mode 100644
+index 0000000..27693f1
+--- /dev/null
++++ b/apps/web/src/hooks/useServiceEnabled.ts
+@@ -0,0 +1,22 @@
++import { useQuery } from '@tanstack/react-query'
++import { api } from '../lib/api'
++
++interface ServiceStatus {
++  key: string
++  effectiveEnabled: boolean
++  isMaintenance: boolean
++  maintenanceMsg: string | null
++}
++
++export function useServiceEnabled(serviceKey: string): boolean {
++  const { data } = useQuery<ServiceStatus[]>({
++    queryKey: ['my-services'],
++    queryFn: () => api.get('/settings/my-services').then(r => r.data.data),
++    staleTime: 5 * 60 * 1000,
++  })
++
++  if (!data) return true // default to enabled while loading
++  const svc = data.find(s => s.key === serviceKey)
++  if (!svc) return true // if not found, assume enabled (no record = default)
++  return svc.effectiveEnabled && !svc.isMaintenance
++}
+diff --git a/apps/web/src/pages/AutomationPage.tsx b/apps/web/src/pages/AutomationPage.tsx
+index 2c8d23e..f9bc0ed 100644
+--- a/apps/web/src/pages/AutomationPage.tsx
++++ b/apps/web/src/pages/AutomationPage.tsx
+@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
+ import { Plus, Zap, Play, Pause, Trash2, ChevronRight } from 'lucide-react'
+ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+ import { api } from '../lib/api'
++import { useServiceEnabled } from '../hooks/useServiceEnabled'
++import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
+ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+ import { Badge } from '../components/ui/badge'
+ import { Button } from '../components/ui/button'
+@@ -48,8 +50,11 @@ const ACTIONS = [
+ ]
+ 
+ export function AutomationPage() {
++  const automationEnabled = useServiceEnabled('automation_engine')
+   const { success, error: toastError } = useToast()
+   const qc = useQueryClient()
++
++  if (!automationEnabled) return <ServiceDisabledPlaceholder serviceName="Automation Engine" />
+   const [showCreate, setShowCreate] = useState(false)
+   const [name, setName] = useState('')
+   const [trigger, setTrigger] = useState('lead_created')
+diff --git a/apps/web/src/pages/DashboardPage.tsx b/apps/web/src/pages/DashboardPage.tsx
+index 2cedef3..f43dd97 100644
+--- a/apps/web/src/pages/DashboardPage.tsx
++++ b/apps/web/src/pages/DashboardPage.tsx
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query'
+ import { motion } from 'framer-motion'
+-import { Target, TrendingUp, Calendar, DollarSign, ArrowUpRight, Users, Zap } from 'lucide-react'
++import { Target, TrendingUp, Calendar, DollarSign, ArrowUpRight, Users, Zap, CheckCircle, AlertTriangle, XCircle, Clock } from 'lucide-react'
+ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+ import { api } from '../lib/api'
+ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+@@ -38,6 +38,56 @@ function KpiCard({ title, value, icon: Icon, change, gradient }: {
+ 
+ const COLORS = ['#7B2FBE', '#C43E8A', '#E8622A', '#22C55E', '#F59E0B', '#3B82F6']
+ 
++interface ServiceStatusItem {
++  key: string
++  name: string
++  effectiveEnabled: boolean
++  isMaintenance: boolean
++  maintenanceMsg: string | null
++}
++
++function SystemStatusWidget() {
++  const { data: statusData } = useQuery({
++    queryKey: ['dashboard-service-status'],
++    queryFn: () => api.get('/dashboard/service-status').then(r => r.data.data),
++    staleTime: 2 * 60 * 1000,
++  })
++
++  if (!statusData) return null
++
++  const getIcon = (svc: ServiceStatusItem) => {
++    if (!svc.effectiveEnabled) return <XCircle className="h-3 w-3 text-danger" />
++    if (svc.isMaintenance) return <Clock className="h-3 w-3 text-warning" />
++    return <CheckCircle className="h-3 w-3 text-success" />
++  }
++
++  return (
++    <Card>
++      <CardHeader className="flex-row items-center justify-between pb-3">
++        <CardTitle className="text-sm flex items-center gap-2">
++          {statusData.hasIssues
++            ? <AlertTriangle className="h-4 w-4 text-warning" />
++            : <CheckCircle className="h-4 w-4 text-success" />}
++          System Status
++        </CardTitle>
++        <Badge variant={statusData.hasIssues ? 'warning' : 'success'} className="text-[9px]">
++          {statusData.summary}
++        </Badge>
++      </CardHeader>
++      <CardContent className="pt-0">
++        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
++          {statusData.services?.map((svc: ServiceStatusItem) => (
++            <div key={svc.key} className={`flex items-center gap-1.5 text-xs p-1.5 rounded-lg ${!svc.effectiveEnabled ? 'bg-danger/5' : svc.isMaintenance ? 'bg-warning/5' : 'bg-bg-elevated'}`}>
++              {getIcon(svc)}
++              <span className="text-text-secondary truncate">{svc.name}</span>
++            </div>
++          ))}
++        </div>
++      </CardContent>
++    </Card>
++  )
++}
++
+ export function DashboardPage() {
+   const { data: overview } = useQuery({
+     queryKey: ['analytics', 'overview'],
+@@ -151,6 +201,9 @@ export function DashboardPage() {
+           </CardContent>
+         </Card>
+       </motion.div>
++      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
++        <SystemStatusWidget />
++      </motion.div>
+     </div>
+   )
+ }
+diff --git a/apps/web/src/pages/IntegrationsPage.tsx b/apps/web/src/pages/IntegrationsPage.tsx
+index e4d3f8b..833ee4c 100644
+--- a/apps/web/src/pages/IntegrationsPage.tsx
++++ b/apps/web/src/pages/IntegrationsPage.tsx
+@@ -13,6 +13,8 @@ import { Label } from '../components/ui/label'
+ import { useToast } from '../components/ui/toast'
+ import { api } from '../lib/api'
+ import { relativeTime } from '../lib/utils'
++import { useServiceEnabled } from '../hooks/useServiceEnabled'
++import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
+ 
+ interface Integration {
+   id: string
+@@ -38,6 +40,7 @@ const INTEGRATIONS_CONFIG = [
+ ]
+ 
+ export function IntegrationsPage() {
++  const metaAdsEnabled = useServiceEnabled('meta_ads')
+   const { success, error: toastError } = useToast()
+   const qc = useQueryClient()
+   const { data: integrations } = useIntegrations()
+diff --git a/apps/web/src/pages/WhatsAppCampaignsPage.tsx b/apps/web/src/pages/WhatsAppCampaignsPage.tsx
+index d64176c..ea4b501 100644
+--- a/apps/web/src/pages/WhatsAppCampaignsPage.tsx
++++ b/apps/web/src/pages/WhatsAppCampaignsPage.tsx
+@@ -12,6 +12,8 @@ import { Textarea } from '../components/ui/textarea'
+ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
+ import { useToast } from '../components/ui/toast'
+ import { formatDate } from '../lib/utils'
++import { useServiceEnabled } from '../hooks/useServiceEnabled'
++import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
+ 
+ interface Campaign {
+   id: string
+@@ -37,8 +39,11 @@ const statusConfig = {
+ }
+ 
+ export function WhatsAppCampaignsPage() {
++  const whatsappEnabled = useServiceEnabled('whatsapp')
+   const { success, error: toastError } = useToast()
+   const qc = useQueryClient()
++
++  if (!whatsappEnabled) return <ServiceDisabledPlaceholder serviceName="WhatsApp Campaigns" />
+   const [showCreate, setShowCreate] = useState(false)
+   const [form, setForm] = useState({ name: '', template: '', message: '', scheduledAt: '' })
+ 
+diff --git a/apps/web/src/pages/public/SignupPage.tsx b/apps/web/src/pages/public/SignupPage.tsx
+index 2a900c1..8433c00 100644
+--- a/apps/web/src/pages/public/SignupPage.tsx
++++ b/apps/web/src/pages/public/SignupPage.tsx
+@@ -91,7 +91,7 @@ function PasswordStrength({ password }: { password: string }) {
+ }
+ 
+ // ── Welcome modal shown after successful signup ──────────────────────────────
+-function WelcomeModal({ slug, onContinue }: { slug: string; onContinue: () => void }) {
++function WelcomeModal({ slug, onContinue, isCustom }: { slug: string; onContinue: () => void; isCustom?: boolean }) {
+   const [copied, setCopied] = useState(false)
+ 
+   const handleCopy = () => {
+@@ -120,10 +120,12 @@ function WelcomeModal({ slug, onContinue }: { slug: string; onContinue: () => vo
+         </div>
+ 
+         <h2 className="font-heading font-bold text-2xl text-text-primary text-center mb-2">
+-          Account Created! 🎉
++          {isCustom ? 'Request Submitted!' : 'Account Created! 🎉'}
+         </h2>
+         <p className="text-text-secondary text-sm text-center mb-6">
+-          Your 14-day free trial has started. Save your workspace slug — you'll need it to log in.
++          {isCustom
++            ? 'Your custom package request has been submitted. Our team will configure your services within 24 hours.'
++            : "Your 14-day free trial has started. Save your workspace slug — you'll need it to log in."}
+         </p>
+ 
+         {/* Workspace slug box */}
+@@ -174,6 +176,7 @@ export function SignupPage() {
+   const [showConfirmPw, setShowConfirmPw] = useState(false)
+   const [submitting, setSubmitting] = useState(false)
+   const [workspaceSlug, setWorkspaceSlug] = useState<string | null>(null)
++  const [isCustomPackage, setIsCustomPackage] = useState(false)
+ 
+   const { data: plans = [] } = useQuery<Plan[]>({
+     queryKey: ['public-plans'],
+@@ -193,9 +196,10 @@ export function SignupPage() {
+     if (!step1Data) return
+     setSubmitting(true)
+     try {
++      const planSlug = isCustomPackage ? 'custom' : selectedPlan
+       const res = await api.post('/public/register', {
+         ...step1Data,
+-        planSlug: selectedPlan,
++        planSlug,
+         billingCycle: yearly ? 'yearly' : 'monthly',
+         name: data.name,
+         email: data.email,
+@@ -203,7 +207,6 @@ export function SignupPage() {
+       })
+       const { user, tenant, accessToken, refreshToken } = res.data.data
+       setAuth(user, tenant, accessToken, refreshToken)
+-      // Show welcome modal with workspace slug
+       setWorkspaceSlug(tenant.slug)
+     } catch (err: unknown) {
+       const message = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'Signup failed. Please try again.'
+@@ -219,6 +222,7 @@ export function SignupPage() {
+       {workspaceSlug && (
+         <WelcomeModal
+           slug={workspaceSlug}
++          isCustom={isCustomPackage}
+           onContinue={() => navigate('/dashboard')}
+         />
+       )}
+@@ -329,11 +333,11 @@ export function SignupPage() {
+                     </span>
+                   </div>
+                   <div className="space-y-3">
+-                    {plans.map(plan => (
++                    {plans.filter(p => p.slug !== 'custom').map(plan => (
+                       <button
+                         key={plan.id}
+-                        onClick={() => setSelectedPlan(plan.slug)}
+-                        className={`w-full p-4 rounded-xl border text-left transition-all ${selectedPlan === plan.slug
++                        onClick={() => { setSelectedPlan(plan.slug); setIsCustomPackage(false) }}
++                        className={`w-full p-4 rounded-xl border text-left transition-all ${!isCustomPackage && selectedPlan === plan.slug
+                             ? 'border-brand-purple/60 bg-brand-purple/10 shadow-glow-purple'
+                             : 'border-border hover:border-brand-purple/30'
+                           }`}
+@@ -360,6 +364,28 @@ export function SignupPage() {
+                         </div>
+                       </button>
+                     ))}
++                    {/* Custom Package option */}
++                    <button
++                      onClick={() => { setIsCustomPackage(true); setSelectedPlan('custom') }}
++                      className={`w-full p-4 rounded-xl border text-left transition-all ${isCustomPackage
++                          ? 'border-brand-coral/60 bg-brand-coral/10'
++                          : 'border-border hover:border-brand-coral/30'
++                        }`}
++                    >
++                      <div className="flex items-center justify-between">
++                        <div>
++                          <div className="flex items-center gap-2">
++                            <span className="font-heading font-semibold text-text-primary">Custom Package</span>
++                            <span className="text-[10px] bg-brand-coral text-white px-2 py-0.5 rounded-full">Enterprise</span>
++                          </div>
++                          <p className="text-xs text-text-muted mt-0.5">Select specific features you need — Our team will configure your workspace</p>
++                          <p className="text-xs text-brand-coral mt-1">Contact us for pricing</p>
++                        </div>
++                        <div className="text-right shrink-0">
++                          <span className="font-heading font-bold text-xl text-text-primary">Custom</span>
++                        </div>
++                      </div>
++                    </button>
+                   </div>
+                   <div className="flex gap-3 mt-6">
+                     <Button variant="secondary" onClick={() => setStep(0)}>
+diff --git a/apps/web/src/pages/super-admin/SuperAdminCompanies.tsx b/apps/web/src/pages/super-admin/SuperAdminCompanies.tsx
+index 0dc7884..90212e1 100644
+--- a/apps/web/src/pages/super-admin/SuperAdminCompanies.tsx
++++ b/apps/web/src/pages/super-admin/SuperAdminCompanies.tsx
+@@ -1,7 +1,7 @@
+ import { useState } from 'react'
+ import { motion } from 'framer-motion'
+ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+-import { Search, Eye, Pause, Play, Trash2, ArrowRight, UserCheck, ChevronDown } from 'lucide-react'
++import { Search, Eye, Pause, Play, Trash2, UserCheck, Settings, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-react'
+ import { useNavigate } from 'react-router-dom'
+ import { superAdminApi } from '../../lib/superAdminApi'
+ import { useAuthStore } from '../../store/auth'
+@@ -12,7 +12,7 @@ import { Input } from '../../components/ui/input'
+ import { Select } from '../../components/ui/select'
+ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog'
+ import { useToast } from '../../components/ui/toast'
+-import { formatDate, relativeTime } from '../../lib/utils'
++import { formatDate } from '../../lib/utils'
+ 
+ interface Company {
+   id: string
+@@ -24,8 +24,113 @@ interface Company {
+   _count: { users: number; leads: number }
+ }
+ 
++interface ServiceWithTenant {
++  key: string
++  name: string
++  category: string
++  isCore: boolean
++  isEnabled: boolean
++  isMaintenance: boolean
++  tenantEnabled: boolean | null
++  overriddenBySuperAdmin: boolean
++  disabledReason: string | null
++}
++
+ const statusVariant = { active: 'success', trial: 'warning', suspended: 'danger', cancelled: 'secondary' } as const
+ 
++const CATEGORY_LABELS: Record<string, string> = {
++  crm: 'CRM', communication: 'Communication', integration: 'Integration',
++  analytics: 'Analytics', automation: 'Automation', ai: 'AI', security: 'Security & Data',
++}
++
++function ServicesTab({ companyId }: { companyId: string }) {
++  const { success, error: toastError } = useToast()
++  const qc = useQueryClient()
++  const [disabledReasons, setDisabledReasons] = useState<Record<string, string>>({})
++
++  const { data: services = [], isLoading } = useQuery<ServiceWithTenant[]>({
++    queryKey: ['sa-company-services', companyId],
++    queryFn: () => superAdminApi.get(`/super-admin/companies/${companyId}/services`).then(r => r.data.data),
++  })
++
++  const toggleMut = useMutation({
++    mutationFn: ({ key, isEnabled, disabledReason }: { key: string; isEnabled: boolean; disabledReason?: string }) =>
++      superAdminApi.put(`/super-admin/companies/${companyId}/services/${key}`, { isEnabled, disabledReason }),
++    onSuccess: () => { success('Service updated'); qc.invalidateQueries({ queryKey: ['sa-company-services', companyId] }) },
++    onError: () => toastError('Update failed'),
++  })
++
++  const resetMut = useMutation({
++    mutationFn: () => superAdminApi.post(`/super-admin/companies/${companyId}/services/reset`),
++    onSuccess: () => { success('Reset to plan defaults'); qc.invalidateQueries({ queryKey: ['sa-company-services', companyId] }) },
++    onError: () => toastError('Reset failed'),
++  })
++
++  const grouped = services.reduce<Record<string, ServiceWithTenant[]>>((acc, s) => {
++    if (!acc[s.category]) acc[s.category] = []
++    acc[s.category].push(s)
++    return acc
++  }, {})
++
++  if (isLoading) return <div className="py-8 text-center text-text-muted text-xs">Loading services...</div>
++
++  return (
++    <div className="space-y-4">
++      <div className="flex items-center justify-between">
++        <p className="text-xs text-text-muted">{services.length} services configured</p>
++        <Button size="sm" variant="secondary" onClick={() => resetMut.mutate()} loading={resetMut.isPending}>
++          <RefreshCw className="h-3.5 w-3.5" /> Reset to Plan Defaults
++        </Button>
++      </div>
++      {Object.entries(grouped).map(([cat, svcs]) => (
++        <div key={cat}>
++          <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">{CATEGORY_LABELS[cat] || cat}</p>
++          <div className="grid grid-cols-2 gap-2">
++            {svcs.map(svc => {
++              const effectiveEnabled = svc.isEnabled && (svc.tenantEnabled ?? true)
++              return (
++                <div key={svc.key} className={`p-2.5 rounded-lg border ${effectiveEnabled ? 'border-border bg-bg-elevated' : 'border-danger/20 bg-danger/5'}`}>
++                  <div className="flex items-center justify-between mb-1">
++                    <div className="flex items-center gap-1.5">
++                      <span className="text-xs font-medium text-text-primary">{svc.name}</span>
++                      {svc.isCore && <Badge variant="secondary" className="text-[8px] py-0">Core</Badge>}
++                      {svc.overriddenBySuperAdmin && <Badge variant="warning" className="text-[8px] py-0">Override</Badge>}
++                    </div>
++                    <button
++                      onClick={() => toggleMut.mutate({ key: svc.key, isEnabled: !(svc.tenantEnabled ?? true), disabledReason: disabledReasons[svc.key] })}
++                      disabled={svc.isCore}
++                      className={svc.isCore ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-80'}
++                    >
++                      {effectiveEnabled
++                        ? <ToggleRight className="h-4 w-4 text-success" />
++                        : <ToggleLeft className="h-4 w-4 text-text-muted" />}
++                    </button>
++                  </div>
++                  <div className="flex items-center gap-1">
++                    <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${svc.isEnabled ? 'bg-success' : 'bg-danger'}`} />
++                    <span className="text-[10px] text-text-muted">Global: {svc.isEnabled ? 'on' : 'off'}</span>
++                    {svc.isMaintenance && <span className="text-[10px] text-warning ml-1">• maintenance</span>}
++                  </div>
++                  {!effectiveEnabled && (
++                    <div className="mt-1.5">
++                      <Input
++                        placeholder="Disabled reason..."
++                        value={disabledReasons[svc.key] || svc.disabledReason || ''}
++                        onChange={e => setDisabledReasons(prev => ({ ...prev, [svc.key]: e.target.value }))}
++                        className="text-[10px] h-6"
++                      />
++                    </div>
++                  )}
++                </div>
++              )
++            })}
++          </div>
++        </div>
++      ))}
++    </div>
++  )
++}
++
+ export function SuperAdminCompanies() {
+   const navigate = useNavigate()
+   const qc = useQueryClient()
+@@ -35,7 +140,8 @@ export function SuperAdminCompanies() {
+   const [statusFilter, setStatusFilter] = useState('')
+   const [page, setPage] = useState(1)
+   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null)
+-  const [expanded, setExpanded] = useState<string | null>(null)
++  const [servicesCompany, setServicesCompany] = useState<Company | null>(null)
++  const [activeTab, setActiveTab] = useState<'overview' | 'services'>('overview')
+ 
+   const { data, isLoading } = useQuery({
+     queryKey: ['sa-companies', search, statusFilter, page],
+@@ -90,6 +196,7 @@ export function SuperAdminCompanies() {
+           <option value="trial">Trial</option>
+           <option value="suspended">Suspended</option>
+           <option value="cancelled">Cancelled</option>
++          <option value="custom">Custom Package</option>
+         </Select>
+       </div>
+ 
+@@ -132,6 +239,12 @@ export function SuperAdminCompanies() {
+                       <Button size="icon-sm" variant="ghost" title="Impersonate" onClick={() => impersonateMut.mutate(c.id)}>
+                         <UserCheck className="h-3.5 w-3.5" />
+                       </Button>
++                      <Button size="icon-sm" variant="ghost" title="Manage Services" onClick={() => { setServicesCompany(c); setActiveTab('services') }}>
++                        <Settings className="h-3.5 w-3.5" />
++                      </Button>
++                      <Button size="icon-sm" variant="ghost" title="Custom Package" onClick={() => navigate(`/super-admin/companies/${c.id}/custom-package`)}>
++                        <Eye className="h-3.5 w-3.5" />
++                      </Button>
+                       {c.isActive ? (
+                         <Button size="icon-sm" variant="ghost" title="Suspend" onClick={() => suspendMut.mutate(c.id)}>
+                           <Pause className="h-3.5 w-3.5" />
+@@ -179,6 +292,63 @@ export function SuperAdminCompanies() {
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
++
++      {/* Services Management Dialog */}
++      <Dialog open={!!servicesCompany} onOpenChange={v => !v && setServicesCompany(null)}>
++        <DialogContent className="max-w-2xl">
++          <DialogHeader>
++            <DialogTitle>{servicesCompany?.name} — Company Details</DialogTitle>
++          </DialogHeader>
++          <div className="border-b border-border flex gap-4 px-6 -mx-6">
++            {(['overview', 'services'] as const).map(tab => (
++              <button
++                key={tab}
++                onClick={() => setActiveTab(tab)}
++                className={`text-xs font-medium pb-2.5 border-b-2 transition-colors capitalize ${activeTab === tab ? 'border-brand-purple text-brand-purple' : 'border-transparent text-text-muted hover:text-text-primary'}`}
++              >
++                {tab}
++              </button>
++            ))}
++          </div>
++          <div className="p-6 max-h-[60vh] overflow-y-auto">
++            {activeTab === 'overview' && servicesCompany && (
++              <div className="space-y-3">
++                <div className="grid grid-cols-2 gap-3 text-xs">
++                  <div className="p-3 rounded-lg bg-bg-elevated">
++                    <p className="text-text-muted">Plan</p>
++                    <p className="font-medium text-text-primary mt-0.5">{servicesCompany.subscription?.plan?.name || '—'}</p>
++                  </div>
++                  <div className="p-3 rounded-lg bg-bg-elevated">
++                    <p className="text-text-muted">Status</p>
++                    <p className="font-medium text-text-primary mt-0.5 capitalize">{servicesCompany.subscription?.status || '—'}</p>
++                  </div>
++                  <div className="p-3 rounded-lg bg-bg-elevated">
++                    <p className="text-text-muted">Users</p>
++                    <p className="font-medium text-text-primary mt-0.5">{servicesCompany._count.users}</p>
++                  </div>
++                  <div className="p-3 rounded-lg bg-bg-elevated">
++                    <p className="text-text-muted">Leads</p>
++                    <p className="font-medium text-text-primary mt-0.5">{servicesCompany._count.leads.toLocaleString('en-IN')}</p>
++                  </div>
++                </div>
++                <div className="p-3 rounded-lg bg-bg-elevated text-xs">
++                  <p className="text-text-muted">Industry</p>
++                  <p className="font-medium text-text-primary mt-0.5">{servicesCompany.industry || '—'}</p>
++                </div>
++                <Button size="sm" variant="secondary" onClick={() => navigate(`/super-admin/companies/${servicesCompany.id}/custom-package`)}>
++                  Configure Custom Package
++                </Button>
++              </div>
++            )}
++            {activeTab === 'services' && servicesCompany && (
++              <ServicesTab companyId={servicesCompany.id} />
++            )}
++          </div>
++          <DialogFooter>
++            <Button variant="secondary" onClick={() => setServicesCompany(null)}>Close</Button>
++          </DialogFooter>
++        </DialogContent>
++      </Dialog>
+     </div>
+   )
+ }
+diff --git a/apps/web/src/pages/super-admin/SuperAdminCustomPackage.tsx b/apps/web/src/pages/super-admin/SuperAdminCustomPackage.tsx
+new file mode 100644
+index 0000000..9b860a6
+--- /dev/null
++++ b/apps/web/src/pages/super-admin/SuperAdminCustomPackage.tsx
+@@ -0,0 +1,251 @@
++import { useState } from 'react'
++import { useParams, useNavigate } from 'react-router-dom'
++import { useQuery, useMutation } from '@tanstack/react-query'
++import { motion } from 'framer-motion'
++import { ArrowLeft, Package, CheckCircle } from 'lucide-react'
++import { superAdminApi } from '../../lib/superAdminApi'
++import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
++import { Badge } from '../../components/ui/badge'
++import { Button } from '../../components/ui/button'
++import { Input } from '../../components/ui/input'
++import { Label } from '../../components/ui/label'
++import { useToast } from '../../components/ui/toast'
++
++interface ServiceDef {
++  key: string
++  name: string
++  category: string
++  isCore: boolean
++}
++
++interface Company {
++  id: string
++  name: string
++  industry?: string
++  subscription?: { plan: { name: string } }
++  _count: { users: number; leads: number }
++}
++
++const CATEGORY_LABELS: Record<string, string> = {
++  crm: 'CRM', communication: 'Communication', integration: 'Integration',
++  analytics: 'Analytics', automation: 'Automation', ai: 'AI', security: 'Security & Data',
++}
++
++const ALL_SERVICES: ServiceDef[] = [
++  { key: 'leads', name: 'Leads', category: 'crm', isCore: true },
++  { key: 'pipeline', name: 'Pipeline', category: 'crm', isCore: true },
++  { key: 'followups', name: 'Follow-ups', category: 'crm', isCore: true },
++  { key: 'tasks', name: 'Tasks', category: 'crm', isCore: true },
++  { key: 'contacts', name: 'Contacts', category: 'crm', isCore: true },
++  { key: 'service_boards', name: 'Service Boards', category: 'crm', isCore: false },
++  { key: 'publishers', name: 'Publishers', category: 'crm', isCore: false },
++  { key: 'whatsapp', name: 'WhatsApp', category: 'communication', isCore: false },
++  { key: 'email', name: 'Email', category: 'communication', isCore: true },
++  { key: 'ivr_dialer', name: 'IVR Dialer', category: 'communication', isCore: false },
++  { key: 'sms', name: 'SMS', category: 'communication', isCore: false },
++  { key: 'meta_ads', name: 'Meta Ads', category: 'integration', isCore: false },
++  { key: 'google_ads', name: 'Google Ads', category: 'integration', isCore: false },
++  { key: 'indiamart', name: 'IndiaMART', category: 'integration', isCore: false },
++  { key: 'justdial', name: 'JustDial', category: 'integration', isCore: false },
++  { key: 'acres99', name: '99Acres', category: 'integration', isCore: false },
++  { key: 'housing', name: 'Housing.com', category: 'integration', isCore: false },
++  { key: 'tradeindia', name: 'TradeIndia', category: 'integration', isCore: false },
++  { key: 'zapier', name: 'Zapier', category: 'integration', isCore: false },
++  { key: 'basic_analytics', name: 'Basic Analytics', category: 'analytics', isCore: true },
++  { key: 'advanced_analytics', name: 'Advanced Analytics', category: 'analytics', isCore: false },
++  { key: 'call_insights', name: 'Call Insights', category: 'analytics', isCore: false },
++  { key: 'automation_engine', name: 'Automation Engine', category: 'automation', isCore: false },
++  { key: 'workflow_builder', name: 'Workflow Builder', category: 'automation', isCore: false },
++  { key: 'ai_scoring', name: 'AI Scoring', category: 'ai', isCore: false },
++  { key: 'ai_email', name: 'AI Email', category: 'ai', isCore: false },
++  { key: 'ai_chatbot', name: 'AI Chatbot', category: 'ai', isCore: false },
++  { key: 'api_access', name: 'API Access', category: 'security', isCore: false },
++  { key: 'audit_logs', name: 'Audit Logs', category: 'security', isCore: false },
++  { key: 'import_export', name: 'Import/Export', category: 'security', isCore: true },
++]
++
++export function SuperAdminCustomPackage() {
++  const { id } = useParams<{ id: string }>()
++  const navigate = useNavigate()
++  const { success, error: toastError } = useToast()
++
++  const [selected, setSelected] = useState<string[]>(ALL_SERVICES.filter(s => s.isCore).map(s => s.key))
++  const [packageName, setPackageName] = useState('')
++  const [notes, setNotes] = useState('')
++  const [saved, setSaved] = useState(false)
++
++  const { data: company } = useQuery<Company>({
++    queryKey: ['sa-company', id],
++    queryFn: () => superAdminApi.get(`/super-admin/companies/${id}`).then(r => r.data.data),
++    enabled: !!id,
++  })
++
++  const saveMut = useMutation({
++    mutationFn: () => superAdminApi.post(`/super-admin/companies/${id}/custom-package`, {
++      name: packageName,
++      notes,
++      services: selected,
++    }),
++    onSuccess: () => { success('Custom package applied'); setSaved(true) },
++    onError: () => toastError('Failed to apply package'),
++  })
++
++  const grouped = ALL_SERVICES.reduce<Record<string, ServiceDef[]>>((acc, s) => {
++    if (!acc[s.category]) acc[s.category] = []
++    acc[s.category].push(s)
++    return acc
++  }, {})
++
++  const toggle = (key: string, isCore: boolean) => {
++    if (isCore) return
++    if (selected.includes(key)) setSelected(prev => prev.filter(k => k !== key))
++    else setSelected(prev => [...prev, key])
++  }
++
++  if (saved) {
++    return (
++      <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] space-y-4">
++        <div className="h-16 w-16 rounded-full bg-success/20 flex items-center justify-center">
++          <CheckCircle className="h-8 w-8 text-success" />
++        </div>
++        <h2 className="font-heading font-bold text-xl text-text-primary">Package Applied!</h2>
++        <p className="text-text-secondary text-sm text-center max-w-md">
++          The custom package has been configured for {company?.name}. The tenant admin has been notified.
++        </p>
++        <div className="flex gap-3">
++          <Button variant="secondary" onClick={() => navigate('/super-admin/companies')}>Back to Companies</Button>
++          <Button onClick={() => { setSaved(false) }}>Edit Package</Button>
++        </div>
++      </div>
++    )
++  }
++
++  return (
++    <div className="p-6 space-y-5">
++      <div className="flex items-center gap-3">
++        <Button size="icon-sm" variant="ghost" onClick={() => navigate('/super-admin/companies')}>
++          <ArrowLeft className="h-4 w-4" />
++        </Button>
++        <div>
++          <h1 className="font-heading font-bold text-xl text-text-primary">Custom Package Builder</h1>
++          <p className="text-text-secondary text-xs mt-0.5">{company?.name}</p>
++        </div>
++      </div>
++
++      {/* Company info header */}
++      {company && (
++        <Card>
++          <CardContent className="p-4 flex items-center gap-6">
++            <div className="h-10 w-10 rounded-lg bg-brand-purple/15 flex items-center justify-center shrink-0">
++              <Package className="h-5 w-5 text-brand-purple" />
++            </div>
++            <div className="flex-1 grid grid-cols-4 gap-4 text-xs">
++              <div>
++                <p className="text-text-muted">Company</p>
++                <p className="font-medium text-text-primary">{company.name}</p>
++              </div>
++              <div>
++                <p className="text-text-muted">Industry</p>
++                <p className="font-medium text-text-primary">{company.industry || '—'}</p>
++              </div>
++              <div>
++                <p className="text-text-muted">Current Plan</p>
++                <p className="font-medium text-text-primary">{company.subscription?.plan?.name || '—'}</p>
++              </div>
++              <div>
++                <p className="text-text-muted">Users / Leads</p>
++                <p className="font-medium text-text-primary">{company._count.users} / {company._count.leads}</p>
++              </div>
++            </div>
++          </CardContent>
++        </Card>
++      )}
++
++      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
++        {/* Left: Service selection */}
++        <div className="lg:col-span-2 space-y-4">
++          <div className="grid grid-cols-2 gap-4">
++            <div className="space-y-1.5">
++              <Label>Package Name</Label>
++              <Input placeholder="e.g. Real Estate Pro" value={packageName} onChange={e => setPackageName(e.target.value)} className="text-xs" />
++            </div>
++            <div className="space-y-1.5">
++              <Label>Notes</Label>
++              <Input placeholder="Internal notes..." value={notes} onChange={e => setNotes(e.target.value)} className="text-xs" />
++            </div>
++          </div>
++
++          <Card>
++            <CardHeader className="pb-2">
++              <CardTitle className="text-sm">Select Services</CardTitle>
++            </CardHeader>
++            <CardContent className="pt-0 space-y-4">
++              {Object.entries(grouped).map(([cat, svcs]) => (
++                <div key={cat}>
++                  <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">{CATEGORY_LABELS[cat] || cat}</p>
++                  <div className="grid grid-cols-3 gap-2">
++                    {svcs.map(svc => (
++                      <label
++                        key={svc.key}
++                        className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
++                          selected.includes(svc.key)
++                            ? 'border-brand-purple/60 bg-brand-purple/10'
++                            : 'border-border hover:border-border-strong'
++                        } ${svc.isCore ? 'cursor-not-allowed opacity-70' : ''}`}
++                      >
++                        <input
++                          type="checkbox"
++                          checked={selected.includes(svc.key)}
++                          onChange={() => toggle(svc.key, svc.isCore)}
++                          disabled={svc.isCore}
++                          className="accent-brand-purple"
++                        />
++                        <span className="flex-1">{svc.name}</span>
++                        {svc.isCore && <Badge variant="secondary" className="text-[8px]">Core</Badge>}
++                      </label>
++                    ))}
++                  </div>
++                </div>
++              ))}
++            </CardContent>
++          </Card>
++        </div>
++
++        {/* Right: Live preview */}
++        <div className="space-y-4">
++          <Card>
++            <CardHeader className="pb-2">
++              <CardTitle className="text-sm">Live Preview</CardTitle>
++            </CardHeader>
++            <CardContent className="pt-0">
++              <p className="text-xs text-text-muted mb-3">Tenant will see these services enabled:</p>
++              <div className="space-y-1.5 max-h-80 overflow-y-auto">
++                {ALL_SERVICES.filter(s => selected.includes(s.key)).map(s => (
++                  <div key={s.key} className="flex items-center gap-2 text-xs p-1.5 rounded bg-bg-elevated">
++                    <div className="h-1.5 w-1.5 rounded-full bg-success shrink-0" />
++                    <span className="text-text-primary">{s.name}</span>
++                    <span className="text-text-muted ml-auto">{CATEGORY_LABELS[s.category] || s.category}</span>
++                  </div>
++                ))}
++                {selected.length === 0 && <p className="text-xs text-text-muted text-center py-4">No services selected</p>}
++              </div>
++              <div className="mt-3 pt-3 border-t border-border">
++                <p className="text-xs font-medium text-text-primary">{selected.length} services selected</p>
++                <p className="text-[10px] text-text-muted mt-0.5">
++                  {ALL_SERVICES.filter(s => !selected.includes(s.key)).length} services disabled
++                </p>
++              </div>
++            </CardContent>
++          </Card>
++
++          <Button className="w-full" onClick={() => saveMut.mutate()} loading={saveMut.isPending}>
++            Save & Apply Package
++          </Button>
++          <p className="text-[10px] text-text-muted text-center">
++            This will immediately enable/disable services and notify the tenant admin.
++          </p>
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/apps/web/src/pages/super-admin/SuperAdminDashboard.tsx b/apps/web/src/pages/super-admin/SuperAdminDashboard.tsx
+index dfc275f..4acbcfe 100644
+--- a/apps/web/src/pages/super-admin/SuperAdminDashboard.tsx
++++ b/apps/web/src/pages/super-admin/SuperAdminDashboard.tsx
+@@ -2,15 +2,17 @@ import { useQuery } from '@tanstack/react-query'
+ import { motion } from 'framer-motion'
+ import {
+   Building2, TrendingUp, DollarSign, Target, UserPlus, UserMinus,
+-  AlertCircle, Activity, Users
++  AlertCircle, Activity, Users, Package
+ } from 'lucide-react'
+ import {
+   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+   XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList
+ } from 'recharts'
++import { useNavigate } from 'react-router-dom'
+ import { superAdminApi } from '../../lib/superAdminApi'
+ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
+ import { Badge } from '../../components/ui/badge'
++import { Button } from '../../components/ui/button'
+ import { formatDate } from '../../lib/utils'
+ 
+ const COLORS = ['#7B2FBE', '#C43E8A', '#E8622A', '#22C55E', '#F59E0B', '#3B82F6']
+@@ -79,6 +81,13 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?:
+ }
+ 
+ export function SuperAdminDashboard() {
++  const navigate = useNavigate()
++  const { data: pendingPackages = [] } = useQuery<Array<{ id: string; tenantId: string; createdAt: string; tenant: { id: string; name: string } }>>({
++    queryKey: ['sa-pending-packages'],
++    queryFn: () => superAdminApi.get('/super-admin/custom-packages/pending').then(r => r.data.data),
++    refetchInterval: 60000,
++  })
++
+   const { data: stats, isLoading, error } = useQuery<Stats>({
+     queryKey: ['sa-stats'],
+     queryFn: () => superAdminApi.get('/super-admin/stats').then(r => r.data.data),
+@@ -251,6 +260,41 @@ export function SuperAdminDashboard() {
+         </Card>
+       </div>
+ 
++      {/* Pending Custom Package Requests */}
++      {pendingPackages.length > 0 && (
++        <Card>
++          <CardHeader>
++            <CardTitle className="text-sm flex items-center gap-2">
++              <Package className="h-4 w-4 text-brand-coral" />
++              Pending Custom Package Requests
++              <Badge variant="coral" className="text-[9px] ml-auto">{pendingPackages.length} pending</Badge>
++            </CardTitle>
++          </CardHeader>
++          <CardContent>
++            <div className="space-y-2">
++              {pendingPackages.map(pkg => (
++                <div key={pkg.id} className="flex items-center gap-3 text-xs py-2 border-b border-border/50 last:border-0">
++                  <div className="h-7 w-7 rounded-lg bg-brand-coral/15 flex items-center justify-center text-brand-coral font-bold text-[10px] shrink-0">
++                    {pkg.tenant.name[0]}
++                  </div>
++                  <div className="flex-1 min-w-0">
++                    <p className="text-text-primary font-medium truncate">{pkg.tenant.name}</p>
++                    <p className="text-text-muted">Requested {formatDate(pkg.createdAt)}</p>
++                  </div>
++                  <Button
++                    size="sm"
++                    variant="secondary"
++                    onClick={() => navigate(`/super-admin/companies/${pkg.tenant.id}/custom-package`)}
++                  >
++                    Configure
++                  </Button>
++                </div>
++              ))}
++            </div>
++          </CardContent>
++        </Card>
++      )}
++
+       {/* Recent activity */}
+       {stats.recentActivity?.length > 0 && (
+         <Card>
+diff --git a/apps/web/src/pages/super-admin/SuperAdminPlans.tsx b/apps/web/src/pages/super-admin/SuperAdminPlans.tsx
+index ac8985e..1cf1287 100644
+--- a/apps/web/src/pages/super-admin/SuperAdminPlans.tsx
++++ b/apps/web/src/pages/super-admin/SuperAdminPlans.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from 'react'
++import { useState, KeyboardEvent } from 'react'
+ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+ import { motion } from 'framer-motion'
+ import { Plus, Edit2, Check, X } from 'lucide-react'
+@@ -19,11 +19,117 @@ interface Plan {
+   maxUsers: number
+   maxLeads: number
+   features: string[]
++  includedServices: string[]
+   isActive: boolean
+   isPopular: boolean
+   subscriberCount: number
+ }
+ 
++interface ServiceDef {
++  key: string
++  name: string
++  category: string
++}
++
++const ALL_SERVICES: ServiceDef[] = [
++  { key: 'leads', name: 'Leads', category: 'CRM' },
++  { key: 'pipeline', name: 'Pipeline', category: 'CRM' },
++  { key: 'followups', name: 'Follow-ups', category: 'CRM' },
++  { key: 'tasks', name: 'Tasks', category: 'CRM' },
++  { key: 'contacts', name: 'Contacts', category: 'CRM' },
++  { key: 'service_boards', name: 'Service Boards', category: 'CRM' },
++  { key: 'publishers', name: 'Publishers', category: 'CRM' },
++  { key: 'whatsapp', name: 'WhatsApp', category: 'Communication' },
++  { key: 'email', name: 'Email', category: 'Communication' },
++  { key: 'ivr_dialer', name: 'IVR Dialer', category: 'Communication' },
++  { key: 'sms', name: 'SMS', category: 'Communication' },
++  { key: 'meta_ads', name: 'Meta Ads', category: 'Integration' },
++  { key: 'google_ads', name: 'Google Ads', category: 'Integration' },
++  { key: 'indiamart', name: 'IndiaMART', category: 'Integration' },
++  { key: 'justdial', name: 'JustDial', category: 'Integration' },
++  { key: 'acres99', name: '99Acres', category: 'Integration' },
++  { key: 'housing', name: 'Housing.com', category: 'Integration' },
++  { key: 'tradeindia', name: 'TradeIndia', category: 'Integration' },
++  { key: 'zapier', name: 'Zapier', category: 'Integration' },
++  { key: 'basic_analytics', name: 'Basic Analytics', category: 'Analytics' },
++  { key: 'advanced_analytics', name: 'Advanced Analytics', category: 'Analytics' },
++  { key: 'call_insights', name: 'Call Insights', category: 'Analytics' },
++  { key: 'automation_engine', name: 'Automation Engine', category: 'Automation' },
++  { key: 'workflow_builder', name: 'Workflow Builder', category: 'Automation' },
++  { key: 'ai_scoring', name: 'AI Scoring', category: 'AI' },
++  { key: 'ai_email', name: 'AI Email', category: 'AI' },
++  { key: 'ai_chatbot', name: 'AI Chatbot', category: 'AI' },
++  { key: 'api_access', name: 'API Access', category: 'Security' },
++  { key: 'audit_logs', name: 'Audit Logs', category: 'Security' },
++  { key: 'import_export', name: 'Import/Export', category: 'Security' },
++]
++
++function TagInput({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
++  const [input, setInput] = useState('')
++  const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
++    if ((e.key === 'Enter' || e.key === ',') && input.trim()) {
++      e.preventDefault()
++      const newTag = input.trim().replace(/,$/, '')
++      if (newTag && !tags.includes(newTag)) onChange([...tags, newTag])
++      setInput('')
++    } else if (e.key === 'Backspace' && !input && tags.length > 0) {
++      onChange(tags.slice(0, -1))
++    }
++  }
++  return (
++    <div className="flex flex-wrap gap-1 p-2 border border-border rounded-lg min-h-[60px] bg-bg cursor-text" onClick={() => document.getElementById('tag-input')?.focus()}>
++      {tags.map(t => (
++        <span key={t} className="flex items-center gap-1 text-[10px] bg-brand-purple/15 text-brand-purple px-2 py-0.5 rounded-full">
++          {t}
++          <button type="button" onClick={() => onChange(tags.filter(x => x !== t))}><X className="h-2.5 w-2.5" /></button>
++        </span>
++      ))}
++      <input
++        id="tag-input"
++        value={input}
++        onChange={e => setInput(e.target.value)}
++        onKeyDown={handleKey}
++        placeholder={tags.length === 0 ? 'Type and press Enter...' : ''}
++        className="flex-1 bg-transparent text-xs outline-none min-w-[100px]"
++      />
++    </div>
++  )
++}
++
++function ServiceCheckboxGrid({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
++  const grouped = ALL_SERVICES.reduce<Record<string, ServiceDef[]>>((acc, s) => {
++    if (!acc[s.category]) acc[s.category] = []
++    acc[s.category].push(s)
++    return acc
++  }, {})
++  const toggle = (key: string) => {
++    if (selected.includes(key)) onChange(selected.filter(k => k !== key))
++    else onChange([...selected, key])
++  }
++  return (
++    <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
++      {Object.entries(grouped).map(([cat, svcs]) => (
++        <div key={cat}>
++          <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-1">{cat}</p>
++          <div className="grid grid-cols-2 gap-1">
++            {svcs.map(svc => (
++              <label key={svc.key} className="flex items-center gap-1.5 text-xs cursor-pointer p-1.5 rounded hover:bg-bg-elevated">
++                <input
++                  type="checkbox"
++                  checked={selected.includes(svc.key)}
++                  onChange={() => toggle(svc.key)}
++                  className="accent-brand-purple"
++                />
++                {svc.name}
++              </label>
++            ))}
++          </div>
++        </div>
++      ))}
++    </div>
++  )
++}
++
+ function PlanCard({ plan, onToggle, onEdit }: { plan: Plan; onToggle: () => void; onEdit: () => void }) {
+   return (
+     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+@@ -66,6 +172,11 @@ function PlanCard({ plan, onToggle, onEdit }: { plan: Plan; onToggle: () => void
+             <Badge variant={plan.isActive ? 'success' : 'secondary'}>{plan.isActive ? 'Active' : 'Inactive'}</Badge>
+             <span className="text-text-muted">{plan.subscriberCount} subscriber{plan.subscriberCount !== 1 ? 's' : ''}</span>
+           </div>
++          {plan.includedServices && plan.includedServices.length > 0 && (
++            <div className="mt-3 pt-3 border-t border-border">
++              <p className="text-[10px] text-text-muted mb-1">{plan.includedServices.length} services included</p>
++            </div>
++          )}
+         </CardContent>
+       </Card>
+     </motion.div>
+@@ -77,6 +188,7 @@ export function SuperAdminPlans() {
+   const qc = useQueryClient()
+   const [editPlan, setEditPlan] = useState<Plan | null>(null)
+   const [showCreate, setShowCreate] = useState(false)
++  const [newPlan, setNewPlan] = useState({ name: '', slug: '', price: 0, yearlyPrice: 0, maxUsers: 5, maxLeads: 1000, features: [] as string[], includedServices: [] as string[] })
+ 
+   const { data: plans = [] } = useQuery<Plan[]>({
+     queryKey: ['sa-plans'],
+@@ -89,11 +201,29 @@ export function SuperAdminPlans() {
+   })
+ 
+   const updateMut = useMutation({
+-    mutationFn: (data: Partial<Plan> & { id: string }) => superAdminApi.put(`/super-admin/plans/${data.id}`, data),
++    mutationFn: (data: Partial<Plan> & { id: string }) => superAdminApi.put(`/super-admin/plans/${data.id}`, {
++      ...data,
++      price: Number(data.price),
++      yearlyPrice: Number(data.yearlyPrice),
++      maxUsers: Number(data.maxUsers),
++      maxLeads: Number(data.maxLeads),
++    }),
+     onSuccess: () => { success('Plan updated'); setEditPlan(null); qc.invalidateQueries({ queryKey: ['sa-plans'] }) },
+     onError: () => toastError('Update failed'),
+   })
+ 
++  const createMut = useMutation({
++    mutationFn: (data: typeof newPlan) => superAdminApi.post('/super-admin/plans', {
++      ...data,
++      price: Number(data.price),
++      yearlyPrice: Number(data.yearlyPrice),
++      maxUsers: Number(data.maxUsers),
++      maxLeads: Number(data.maxLeads),
++    }),
++    onSuccess: () => { success('Plan created'); setShowCreate(false); setNewPlan({ name: '', slug: '', price: 0, yearlyPrice: 0, maxUsers: 5, maxLeads: 1000, features: [], includedServices: [] }); qc.invalidateQueries({ queryKey: ['sa-plans'] }) },
++    onError: () => toastError('Create failed'),
++  })
++
+   return (
+     <div className="p-6 space-y-5">
+       <div className="flex items-center justify-between">
+@@ -106,19 +236,19 @@ export function SuperAdminPlans() {
+ 
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         {plans.map(plan => (
+-          <PlanCard key={plan.id} plan={plan} onToggle={() => toggleMut.mutate(plan)} onEdit={() => setEditPlan(plan)} />
++          <PlanCard key={plan.id} plan={plan} onToggle={() => toggleMut.mutate(plan)} onEdit={() => setEditPlan({ ...plan })} />
+         ))}
+       </div>
+ 
+       {/* Edit Dialog */}
+       {editPlan && (
+         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-bg-surface border border-border rounded-xl w-full max-w-lg p-6">
++          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-bg-surface border border-border rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="font-heading font-semibold text-text-primary">Edit {editPlan.name} Plan</h3>
+               <button onClick={() => setEditPlan(null)} className="text-text-muted hover:text-text-primary"><X className="h-4 w-4" /></button>
+             </div>
+-            <div className="grid grid-cols-2 gap-4">
++            <div className="grid grid-cols-2 gap-4 mb-4">
+               {[
+                 { key: 'price', label: 'Monthly Price (₹)' },
+                 { key: 'yearlyPrice', label: 'Yearly Price (₹)' },
+@@ -129,13 +259,21 @@ export function SuperAdminPlans() {
+                   <Label>{f.label}</Label>
+                   <Input
+                     type="number"
+-                    defaultValue={(editPlan as unknown as Record<string, number>)[f.key]}
++                    value={(editPlan as unknown as Record<string, number>)[f.key]}
+                     onChange={e => setEditPlan(prev => prev ? { ...prev, [f.key]: Number(e.target.value) } : null)}
+                     className="text-xs"
+                   />
+                 </div>
+               ))}
+             </div>
++            <div className="space-y-1.5 mb-4">
++              <Label>Features (press Enter to add)</Label>
++              <TagInput tags={editPlan.features} onChange={tags => setEditPlan(prev => prev ? { ...prev, features: tags } : null)} />
++            </div>
++            <div className="space-y-1.5 mb-4">
++              <Label>Included Services</Label>
++              <ServiceCheckboxGrid selected={editPlan.includedServices || []} onChange={s => setEditPlan(prev => prev ? { ...prev, includedServices: s } : null)} />
++            </div>
+             <div className="flex gap-2 mt-5 justify-end">
+               <Button variant="secondary" size="sm" onClick={() => setEditPlan(null)}>Cancel</Button>
+               <Button size="sm" onClick={() => updateMut.mutate(editPlan)} loading={updateMut.isPending}>Save Changes</Button>
+@@ -143,6 +281,56 @@ export function SuperAdminPlans() {
+           </motion.div>
+         </div>
+       )}
++
++      {/* Create Dialog */}
++      {showCreate && (
++        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
++          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-bg-surface border border-border rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="font-heading font-semibold text-text-primary">New Plan</h3>
++              <button onClick={() => setShowCreate(false)} className="text-text-muted hover:text-text-primary"><X className="h-4 w-4" /></button>
++            </div>
++            <div className="grid grid-cols-2 gap-4 mb-4">
++              <div className="space-y-1.5">
++                <Label>Plan Name</Label>
++                <Input value={newPlan.name} onChange={e => setNewPlan(p => ({ ...p, name: e.target.value }))} className="text-xs" />
++              </div>
++              <div className="space-y-1.5">
++                <Label>Slug</Label>
++                <Input value={newPlan.slug} onChange={e => setNewPlan(p => ({ ...p, slug: e.target.value }))} className="text-xs" />
++              </div>
++              {[
++                { key: 'price', label: 'Monthly Price (₹)' },
++                { key: 'yearlyPrice', label: 'Yearly Price (₹)' },
++                { key: 'maxUsers', label: 'Max Users' },
++                { key: 'maxLeads', label: 'Max Leads' },
++              ].map(f => (
++                <div key={f.key} className="space-y-1.5">
++                  <Label>{f.label}</Label>
++                  <Input
++                    type="number"
++                    value={(newPlan as unknown as Record<string, number>)[f.key]}
++                    onChange={e => setNewPlan(p => ({ ...p, [f.key]: Number(e.target.value) }))}
++                    className="text-xs"
++                  />
++                </div>
++              ))}
++            </div>
++            <div className="space-y-1.5 mb-4">
++              <Label>Features (press Enter to add)</Label>
++              <TagInput tags={newPlan.features} onChange={tags => setNewPlan(p => ({ ...p, features: tags }))} />
++            </div>
++            <div className="space-y-1.5 mb-4">
++              <Label>Included Services</Label>
++              <ServiceCheckboxGrid selected={newPlan.includedServices} onChange={s => setNewPlan(p => ({ ...p, includedServices: s }))} />
++            </div>
++            <div className="flex gap-2 mt-5 justify-end">
++              <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
++              <Button size="sm" onClick={() => createMut.mutate(newPlan)} loading={createMut.isPending}>Create Plan</Button>
++            </div>
++          </motion.div>
++        </div>
++      )}
+     </div>
+   )
+ }
+diff --git a/apps/web/src/pages/super-admin/SuperAdminServices.tsx b/apps/web/src/pages/super-admin/SuperAdminServices.tsx
+new file mode 100644
+index 0000000..1184819
+--- /dev/null
++++ b/apps/web/src/pages/super-admin/SuperAdminServices.tsx
+@@ -0,0 +1,255 @@
++import { useState, useEffect } from 'react'
++import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
++import { motion } from 'framer-motion'
++import {
++  ToggleLeft, ToggleRight, AlertTriangle, CheckCircle, XCircle,
++  Clock, RefreshCw, Activity
++} from 'lucide-react'
++import { superAdminApi } from '../../lib/superAdminApi'
++import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
++import { Badge } from '../../components/ui/badge'
++import { Button } from '../../components/ui/button'
++import { Input } from '../../components/ui/input'
++import { Label } from '../../components/ui/label'
++import { useToast } from '../../components/ui/toast'
++
++interface ServiceDef {
++  key: string
++  name: string
++  category: string
++  isEnabled: boolean
++  isMaintenance: boolean
++  maintenanceMsg: string | null
++  isCore: boolean
++}
++
++interface HealthResult {
++  key: string
++  name: string
++  category: string
++  status: 'healthy' | 'maintenance' | 'disabled' | 'degraded'
++  message?: string
++}
++
++const CATEGORY_LABELS: Record<string, string> = {
++  crm: 'CRM',
++  communication: 'Communication',
++  integration: 'Integration',
++  analytics: 'Analytics',
++  automation: 'Automation',
++  ai: 'AI',
++  security: 'Security & Data',
++}
++
++const STATUS_COLORS = {
++  healthy: 'text-success bg-success/10',
++  maintenance: 'text-warning bg-warning/10',
++  disabled: 'text-danger bg-danger/10',
++  degraded: 'text-warning bg-warning/10',
++}
++
++function ServiceCard({ svc, onToggle, onMaintenance }: {
++  svc: ServiceDef
++  onToggle: () => void
++  onMaintenance: (enabled: boolean, msg: string) => void
++}) {
++  const [showMsgInput, setShowMsgInput] = useState(false)
++  const [msg, setMsg] = useState(svc.maintenanceMsg || '')
++
++  return (
++    <div className="p-3 rounded-lg border border-border bg-bg-elevated space-y-2">
++      <div className="flex items-center justify-between">
++        <div className="flex items-center gap-2">
++          <span className="text-xs font-medium text-text-primary">{svc.name}</span>
++          {svc.isCore && <Badge variant="secondary" className="text-[9px]">Core</Badge>}
++        </div>
++        <button
++          onClick={onToggle}
++          disabled={svc.isCore}
++          title={svc.isCore ? 'Core services cannot be disabled' : undefined}
++          className={`transition-colors ${svc.isCore ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-80'}`}
++        >
++          {svc.isEnabled
++            ? <ToggleRight className="h-5 w-5 text-success" />
++            : <ToggleLeft className="h-5 w-5 text-text-muted" />}
++        </button>
++      </div>
++      <div className="flex items-center justify-between">
++        <span className="text-[10px] text-text-muted">Maintenance</span>
++        <button
++          onClick={() => {
++            setShowMsgInput(!svc.isMaintenance)
++            if (svc.isMaintenance) onMaintenance(false, '')
++          }}
++          className="transition-colors hover:opacity-80"
++        >
++          {svc.isMaintenance
++            ? <ToggleRight className="h-4 w-4 text-warning" />
++            : <ToggleLeft className="h-4 w-4 text-text-muted" />}
++        </button>
++      </div>
++      {(showMsgInput || svc.isMaintenance) && (
++        <div className="space-y-1">
++          <Input
++            placeholder="Maintenance message..."
++            value={msg}
++            onChange={e => setMsg(e.target.value)}
++            className="text-xs h-7"
++          />
++          <Button
++            size="sm"
++            variant="secondary"
++            className="h-6 text-[10px]"
++            onClick={() => { onMaintenance(true, msg); setShowMsgInput(false) }}
++          >
++            Save Message
++          </Button>
++        </div>
++      )}
++    </div>
++  )
++}
++
++export function SuperAdminServices() {
++  const { success, error: toastError } = useToast()
++  const qc = useQueryClient()
++  const [healthData, setHealthData] = useState<{ services: HealthResult[]; infrastructure: Record<string, string>; checkedAt: string } | null>(null)
++  const [healthLoading, setHealthLoading] = useState(false)
++
++  const { data: services = [] } = useQuery<ServiceDef[]>({
++    queryKey: ['sa-services'],
++    queryFn: () => superAdminApi.get('/super-admin/services').then(r => r.data.data),
++  })
++
++  const toggleMut = useMutation({
++    mutationFn: (key: string) => superAdminApi.put(`/super-admin/services/${key}/toggle`),
++    onSuccess: () => { success('Service updated'); qc.invalidateQueries({ queryKey: ['sa-services'] }) },
++    onError: () => toastError('Update failed'),
++  })
++
++  const maintMut = useMutation({
++    mutationFn: ({ key, isMaintenance, maintenanceMsg }: { key: string; isMaintenance: boolean; maintenanceMsg: string }) =>
++      superAdminApi.put(`/super-admin/services/${key}/maintenance`, { isMaintenance, maintenanceMsg }),
++    onSuccess: () => { success('Maintenance mode updated'); qc.invalidateQueries({ queryKey: ['sa-services'] }) },
++    onError: () => toastError('Update failed'),
++  })
++
++  const fetchHealth = async () => {
++    setHealthLoading(true)
++    try {
++      const res = await superAdminApi.get('/super-admin/services/health')
++      setHealthData(res.data.data)
++    } catch {
++      toastError('Health check failed')
++    } finally {
++      setHealthLoading(false)
++    }
++  }
++
++  useEffect(() => {
++    fetchHealth()
++    const interval = setInterval(fetchHealth, 60000)
++    return () => clearInterval(interval)
++  }, [])
++
++  const grouped = services.reduce<Record<string, ServiceDef[]>>((acc, svc) => {
++    if (!acc[svc.category]) acc[svc.category] = []
++    acc[svc.category].push(svc)
++    return acc
++  }, {})
++
++  const getStatusIcon = (status: string) => {
++    if (status === 'healthy') return <CheckCircle className="h-3.5 w-3.5 text-success" />
++    if (status === 'maintenance') return <Clock className="h-3.5 w-3.5 text-warning" />
++    if (status === 'disabled') return <XCircle className="h-3.5 w-3.5 text-danger" />
++    return <AlertTriangle className="h-3.5 w-3.5 text-warning" />
++  }
++
++  return (
++    <div className="p-6 space-y-5">
++      <div>
++        <h1 className="font-heading font-bold text-xl text-text-primary">Services & Integrations</h1>
++        <p className="text-text-secondary text-xs mt-0.5">Control global service availability and monitor health</p>
++      </div>
++
++      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
++        {/* Left: Global Service Control */}
++        <div className="space-y-4">
++          <h2 className="text-sm font-semibold text-text-primary">Global Service Control Panel</h2>
++          {Object.entries(grouped).map(([category, svcs]) => (
++            <motion.div key={category} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
++              <Card>
++                <CardHeader className="pb-2">
++                  <div className="flex items-center justify-between">
++                    <CardTitle className="text-xs">{CATEGORY_LABELS[category] || category}</CardTitle>
++                    <Badge variant="secondary" className="text-[9px]">{svcs.length} services</Badge>
++                  </div>
++                </CardHeader>
++                <CardContent className="pt-0">
++                  <div className="grid grid-cols-2 gap-2">
++                    {svcs.map(svc => (
++                      <ServiceCard
++                        key={svc.key}
++                        svc={svc}
++                        onToggle={() => toggleMut.mutate(svc.key)}
++                        onMaintenance={(enabled, msg) => maintMut.mutate({ key: svc.key, isMaintenance: enabled, maintenanceMsg: msg })}
++                      />
++                    ))}
++                  </div>
++                </CardContent>
++              </Card>
++            </motion.div>
++          ))}
++        </div>
++
++        {/* Right: Health Monitor */}
++        <div className="space-y-4">
++          <div className="flex items-center justify-between">
++            <h2 className="text-sm font-semibold text-text-primary">Service Health Monitor</h2>
++            <Button size="sm" variant="secondary" onClick={fetchHealth} loading={healthLoading}>
++              <RefreshCw className="h-3.5 w-3.5" /> Refresh
++            </Button>
++          </div>
++          {healthData && (
++            <>
++              <Card>
++                <CardHeader className="pb-2">
++                  <CardTitle className="text-xs flex items-center gap-2">
++                    <Activity className="h-3.5 w-3.5" /> Infrastructure
++                  </CardTitle>
++                </CardHeader>
++                <CardContent className="pt-0 flex gap-3">
++                  {Object.entries(healthData.infrastructure).map(([k, v]) => (
++                    <div key={k} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg ${STATUS_COLORS[v as keyof typeof STATUS_COLORS] || 'text-text-muted bg-bg-elevated'}`}>
++                      {getStatusIcon(v)}
++                      {k.charAt(0).toUpperCase() + k.slice(1)}: {v}
++                    </div>
++                  ))}
++                </CardContent>
++              </Card>
++              <div className="text-[10px] text-text-muted">Last checked: {new Date(healthData.checkedAt).toLocaleTimeString()} · Auto-refreshes every 60s</div>
++              <div className="grid grid-cols-2 gap-2">
++                {healthData.services.map(svc => (
++                  <div key={svc.key} className={`p-3 rounded-lg border ${svc.status === 'healthy' ? 'border-success/20 bg-success/5' : svc.status === 'maintenance' ? 'border-warning/20 bg-warning/5' : 'border-danger/20 bg-danger/5'}`}>
++                    <div className="flex items-center gap-1.5 mb-1">
++                      {getStatusIcon(svc.status)}
++                      <span className="text-xs font-medium text-text-primary">{svc.name}</span>
++                    </div>
++                    <div className="flex items-center justify-between">
++                      <span className="text-[10px] text-text-muted">{CATEGORY_LABELS[svc.category] || svc.category}</span>
++                      <span className={`text-[10px] font-medium ${STATUS_COLORS[svc.status]?.split(' ')[0]}`}>{svc.status}</span>
++                    </div>
++                    {svc.message && <p className="text-[10px] text-warning mt-1">{svc.message}</p>}
++                  </div>
++                ))}
++              </div>
++            </>
++          )}
++          {!healthData && healthLoading && (
++            <div className="text-center py-8 text-text-muted text-xs">Running health checks...</div>
++          )}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/package-lock.json b/package-lock.json
+index 049e669..ca73738 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -42,6 +42,7 @@
+         "jsonwebtoken": "^9.0.3",
+         "nodemailer": "^6.9.13",
+         "pino": "^8.19.0",
++        "prisma": "^5.11.0",
+         "socket.io": "^4.7.5",
+         "uuid": "^9.0.1",
+         "zod": "^3.22.4"
+@@ -54,7 +55,6 @@
+         "@typescript-eslint/eslint-plugin": "^7.3.1",
+         "@typescript-eslint/parser": "^7.3.1",
+         "eslint": "^8.57.0",
+-        "prisma": "^5.11.0",
+         "tsx": "^4.7.1",
+         "typescript": "^5.4.2"
+       }
+@@ -172,7 +172,6 @@
+       "integrity": "sha512-RgHBCvtjbOK2gXSNBNIkNoEc9qoVEtau3hj8gEqKQuL3HZAibKarWFEI3Lfm6EYKkLalOh8eSrj9b+ch9H/VBA==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@babel/code-frame": "^7.29.7",
+         "@babel/generator": "^7.29.7",
+@@ -470,7 +469,6 @@
+       "resolved": "https://registry.npmjs.org/@dnd-kit/core/-/core-6.3.1.tgz",
+       "integrity": "sha512-xkGBRQQab4RLwgXxoqETICr6S5JlogafbhNsidmrkVv2YRs5MLwpjoF2qpiGjQt8S9AoxtIV603s0GIUpY5eYQ==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@dnd-kit/accessibility": "^3.1.1",
+         "@dnd-kit/utilities": "^3.2.2",
+@@ -808,6 +806,7 @@
+       "os": [
+         "netbsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -841,6 +840,7 @@
+       "os": [
+         "openbsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -874,6 +874,7 @@
+       "os": [
+         "openharmony"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1718,14 +1719,12 @@
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/@prisma/debug/-/debug-5.22.0.tgz",
+       "integrity": "sha512-AUt44v3YJeggO2ZU5BkXI7M4hu9BF2zzH2iF2V5pyXT/lRTyWiElZ7It+bRH1EshoMRxHgpYg4VB6rCM+mG5jQ==",
+-      "devOptional": true,
+       "license": "Apache-2.0"
+     },
+     "node_modules/@prisma/engines": {
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/@prisma/engines/-/engines-5.22.0.tgz",
+       "integrity": "sha512-UNjfslWhAt06kVL3CjkuYpHAWSO6L4kDCVPegV6itt7nD1kSJavd3vhgAEhjglLJJKEdJ7oIqDJ+yHk6qO8gPA==",
+-      "devOptional": true,
+       "hasInstallScript": true,
+       "license": "Apache-2.0",
+       "dependencies": {
+@@ -1739,14 +1738,12 @@
+       "version": "5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2",
+       "resolved": "https://registry.npmjs.org/@prisma/engines-version/-/engines-version-5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2.tgz",
+       "integrity": "sha512-2PTmxFR2yHW/eB3uqWtcgRcgAbG1rwG9ZriSvQw+nnb7c4uCr3RAcGMb6/zfE88SKlC1Nj2ziUvc96Z379mHgQ==",
+-      "devOptional": true,
+       "license": "Apache-2.0"
+     },
+     "node_modules/@prisma/fetch-engine": {
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/@prisma/fetch-engine/-/fetch-engine-5.22.0.tgz",
+       "integrity": "sha512-bkrD/Mc2fSvkQBV5EpoFcZ87AvOgDxbG99488a5cexp5Ccny+UM6MAe/UFkUC0wLYD9+9befNOqGiIJhhq+HbA==",
+-      "devOptional": true,
+       "license": "Apache-2.0",
+       "dependencies": {
+         "@prisma/debug": "5.22.0",
+@@ -1758,7 +1755,6 @@
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/@prisma/get-platform/-/get-platform-5.22.0.tgz",
+       "integrity": "sha512-pHhpQdr1UPFpt+zFfnPazhulaZYCUqeIcPpJViYoq9R+D/yw4fjE+CtnsnKzPYm0ddUbeXUzjGVGIRVgPDCk4Q==",
+-      "devOptional": true,
+       "license": "Apache-2.0",
+       "dependencies": {
+         "@prisma/debug": "5.22.0"
+@@ -3608,7 +3604,6 @@
+       "integrity": "sha512-ch0qJdr2JY0r04NXSprbK6TXOgnaJ1Tz23fm5W+z0/CBah6BSBc3n96h7K9GOtwh0HrilNWHIBzE1Ko4Dcw/Wg==",
+       "devOptional": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@types/prop-types": "*",
+         "csstype": "^3.2.2"
+@@ -3620,7 +3615,6 @@
+       "integrity": "sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==",
+       "devOptional": true,
+       "license": "MIT",
+-      "peer": true,
+       "peerDependencies": {
+         "@types/react": "^18.0.0"
+       }
+@@ -3681,7 +3675,6 @@
+       "integrity": "sha512-4Z+L8I2OqhZV8qA132M4wNL30ypZGYOQVBfMgxDH/K5UX0PNqTu1c6za9ST5r9+tavvHiTWmBnKzpCJ/GlVFtg==",
+       "dev": true,
+       "license": "BSD-2-Clause",
+-      "peer": true,
+       "dependencies": {
+         "@typescript-eslint/scope-manager": "7.18.0",
+         "@typescript-eslint/types": "7.18.0",
+@@ -3900,7 +3893,6 @@
+       "integrity": "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "bin": {
+         "acorn": "bin/acorn"
+       },
+@@ -4295,7 +4287,6 @@
+         }
+       ],
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "baseline-browser-mapping": "^2.10.12",
+         "caniuse-lite": "^1.0.30001782",
+@@ -5315,7 +5306,6 @@
+       "deprecated": "This version is no longer supported. Please see https://eslint.org/version-support for other options.",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@eslint-community/eslint-utils": "^4.2.0",
+         "@eslint-community/regexpp": "^4.6.1",
+@@ -6649,7 +6639,6 @@
+       "resolved": "https://registry.npmjs.org/jiti/-/jiti-1.21.7.tgz",
+       "integrity": "sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==",
+       "license": "MIT",
+-      "peer": true,
+       "bin": {
+         "jiti": "bin/jiti.js"
+       }
+@@ -7737,7 +7726,6 @@
+         }
+       ],
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "nanoid": "^3.3.12",
+         "picocolors": "^1.1.1",
+@@ -7905,10 +7893,8 @@
+       "version": "5.22.0",
+       "resolved": "https://registry.npmjs.org/prisma/-/prisma-5.22.0.tgz",
+       "integrity": "sha512-vtpjW3XuYCSnMsNVBjLMNkTj6OZbudcPPTPYHqX0CJfpcdWciI1dM8uHETwmDxxiqEwCIE6WvXucWUetJgfu/A==",
+-      "devOptional": true,
+       "hasInstallScript": true,
+       "license": "Apache-2.0",
+-      "peer": true,
+       "dependencies": {
+         "@prisma/engines": "5.22.0"
+       },
+@@ -8016,7 +8002,6 @@
+       "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+       "integrity": "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "loose-envify": "^1.1.0"
+       },
+@@ -8029,7 +8014,6 @@
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+       "integrity": "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "loose-envify": "^1.1.0",
+         "scheduler": "^0.23.2"
+@@ -8043,7 +8027,6 @@
+       "resolved": "https://registry.npmjs.org/react-hook-form/-/react-hook-form-7.76.1.tgz",
+       "integrity": "sha512-rYM7tPiWlu3nZchkR/ex7piyzui2vFPyaLnXnI/RnblB/L4qfMmyses8llJVtF1NpE9WBBsJlGtcSZzPCXW1qQ==",
+       "license": "MIT",
+-      "peer": true,
+       "engines": {
+         "node": ">=18.0.0"
+       },
+@@ -9028,7 +9011,6 @@
+       "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.19.tgz",
+       "integrity": "sha512-3ofp+LL8E+pK/JuPLPggVAIaEuhvIz4qNcf3nA1Xn2o/7fb7s/TYpHhwGDv1ZU3PkBluUVaF8PyCHcm48cKLWQ==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@alloc/quick-lru": "^5.2.0",
+         "arg": "^5.0.2",
+@@ -9151,7 +9133,6 @@
+       "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz",
+       "integrity": "sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==",
+       "license": "MIT",
+-      "peer": true,
+       "engines": {
+         "node": ">=12"
+       },
+@@ -9255,6 +9236,7 @@
+       "os": [
+         "aix"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9271,6 +9253,7 @@
+       "os": [
+         "android"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9287,6 +9270,7 @@
+       "os": [
+         "android"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9303,6 +9287,7 @@
+       "os": [
+         "android"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9319,6 +9304,7 @@
+       "os": [
+         "darwin"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9335,6 +9321,7 @@
+       "os": [
+         "darwin"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9351,6 +9338,7 @@
+       "os": [
+         "freebsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9367,6 +9355,7 @@
+       "os": [
+         "freebsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9383,6 +9372,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9399,6 +9389,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9415,6 +9406,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9431,6 +9423,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9447,6 +9440,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9463,6 +9457,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9479,6 +9474,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9495,6 +9491,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9511,6 +9508,7 @@
+       "os": [
+         "linux"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9527,6 +9525,7 @@
+       "os": [
+         "netbsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9543,6 +9542,7 @@
+       "os": [
+         "openbsd"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9559,6 +9559,7 @@
+       "os": [
+         "sunos"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9575,6 +9576,7 @@
+       "os": [
+         "win32"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9591,6 +9593,7 @@
+       "os": [
+         "win32"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9607,6 +9610,7 @@
+       "os": [
+         "win32"
+       ],
++      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -9685,7 +9689,6 @@
+       "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+       "dev": true,
+       "license": "Apache-2.0",
+-      "peer": true,
+       "bin": {
+         "tsc": "bin/tsc",
+         "tsserver": "bin/tsserver"
+@@ -9849,7 +9852,6 @@
+       "integrity": "sha512-o5a9xKjbtuhY6Bi5S3+HvbRERmouabWbyUcpXXUA1u+GNUKoROi9byOJ8M0nHbHYHkYICiMlqxkg1KkYmm25Sw==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "esbuild": "^0.21.3",
+         "postcss": "^8.4.43",
+-- 
+2.43.0
+

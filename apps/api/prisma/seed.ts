@@ -173,23 +173,82 @@ async function main() {
   const growthFeatures = ['Everything in Starter', 'Automation Engine', 'All Integrations', 'WhatsApp & IVR', 'Advanced Analytics', 'Custom Fields', 'Priority Support'];
   const enterpriseFeatures = ['Everything in Growth', 'Unlimited Users', 'Unlimited Leads', 'Dedicated Account Manager', 'SLA Support', 'Custom Integrations', 'On-premise Option'];
 
+  const starterIncluded = ['leads', 'pipeline', 'followups', 'tasks', 'contacts', 'basic_analytics', 'email', 'import_export'];
+  const growthIncluded = [...starterIncluded, 'service_boards', 'publishers', 'whatsapp', 'meta_ads', 'google_ads', 'indiamart', 'automation_engine', 'advanced_analytics', 'audit_logs', 'api_access'];
+  const enterpriseIncluded = [...growthIncluded, 'ivr_dialer', 'sms', 'justdial', 'acres99', 'housing', 'tradeindia', 'zapier', 'call_insights', 'workflow_builder', 'ai_scoring', 'ai_email', 'ai_chatbot'];
+
   const starterPlan = await prisma.plan.upsert({
     where: { slug: 'starter' },
-    update: {},
-    create: { id: randomUUID(), name: 'Starter', slug: 'starter', price: 1999, yearlyPrice: 19990, maxUsers: 5, maxLeads: 1000, features: starterFeatures, sortOrder: 0 },
+    update: { includedServices: starterIncluded },
+    create: { id: randomUUID(), name: 'Starter', slug: 'starter', price: 1999, yearlyPrice: 19990, maxUsers: 5, maxLeads: 1000, features: starterFeatures, includedServices: starterIncluded, sortOrder: 0 },
   });
 
   const growthPlan = await prisma.plan.upsert({
     where: { slug: 'growth' },
-    update: {},
-    create: { id: randomUUID(), name: 'Growth', slug: 'growth', price: 1799, yearlyPrice: 17990, maxUsers: 20, maxLeads: 10000, features: growthFeatures, isPopular: true, sortOrder: 1 },
+    update: { includedServices: growthIncluded },
+    create: { id: randomUUID(), name: 'Growth', slug: 'growth', price: 1799, yearlyPrice: 17990, maxUsers: 20, maxLeads: 10000, features: growthFeatures, includedServices: growthIncluded, isPopular: true, sortOrder: 1 },
   });
 
   const enterprisePlan = await prisma.plan.upsert({
     where: { slug: 'enterprise' },
-    update: {},
-    create: { id: randomUUID(), name: 'Enterprise', slug: 'enterprise', price: 1599, yearlyPrice: 15990, maxUsers: -1, maxLeads: -1, features: enterpriseFeatures, sortOrder: 2 },
+    update: { includedServices: enterpriseIncluded },
+    create: { id: randomUUID(), name: 'Enterprise', slug: 'enterprise', price: 1599, yearlyPrice: 15990, maxUsers: -1, maxLeads: -1, features: enterpriseFeatures, includedServices: enterpriseIncluded, sortOrder: 2 },
   });
+
+  await prisma.plan.upsert({
+    where: { slug: 'custom' },
+    update: {},
+    create: { id: randomUUID(), name: 'Custom', slug: 'custom', price: 0, yearlyPrice: 0, maxUsers: -1, maxLeads: -1, features: ['Custom feature set', 'Configured by our team', 'Contact us for pricing'], includedServices: [], sortOrder: 3 },
+  });
+
+  // ── Service Definitions ───────────────────────────────────────────────────
+  const serviceDefinitions = [
+    // CRM — core
+    { key: 'leads', name: 'Leads', category: 'crm', isCore: true },
+    { key: 'pipeline', name: 'Pipeline', category: 'crm', isCore: true },
+    { key: 'followups', name: 'Follow-ups', category: 'crm', isCore: true },
+    { key: 'tasks', name: 'Tasks', category: 'crm', isCore: true },
+    { key: 'contacts', name: 'Contacts', category: 'crm', isCore: true },
+    { key: 'service_boards', name: 'Service Boards', category: 'crm', isCore: false },
+    { key: 'publishers', name: 'Publishers', category: 'crm', isCore: false },
+    // Communication
+    { key: 'whatsapp', name: 'WhatsApp', category: 'communication', isCore: false },
+    { key: 'email', name: 'Email', category: 'communication', isCore: true },
+    { key: 'ivr_dialer', name: 'IVR Dialer', category: 'communication', isCore: false },
+    { key: 'sms', name: 'SMS', category: 'communication', isCore: false },
+    // Integration
+    { key: 'meta_ads', name: 'Meta Ads', category: 'integration', isCore: false },
+    { key: 'google_ads', name: 'Google Ads', category: 'integration', isCore: false },
+    { key: 'indiamart', name: 'IndiaMART', category: 'integration', isCore: false },
+    { key: 'justdial', name: 'JustDial', category: 'integration', isCore: false },
+    { key: 'acres99', name: '99Acres', category: 'integration', isCore: false },
+    { key: 'housing', name: 'Housing.com', category: 'integration', isCore: false },
+    { key: 'tradeindia', name: 'TradeIndia', category: 'integration', isCore: false },
+    { key: 'zapier', name: 'Zapier', category: 'integration', isCore: false },
+    // Analytics
+    { key: 'basic_analytics', name: 'Basic Analytics', category: 'analytics', isCore: true },
+    { key: 'advanced_analytics', name: 'Advanced Analytics', category: 'analytics', isCore: false },
+    { key: 'call_insights', name: 'Call Insights', category: 'analytics', isCore: false },
+    // Automation
+    { key: 'automation_engine', name: 'Automation Engine', category: 'automation', isCore: false },
+    { key: 'workflow_builder', name: 'Workflow Builder', category: 'automation', isCore: false },
+    // AI
+    { key: 'ai_scoring', name: 'AI Scoring', category: 'ai', isCore: false },
+    { key: 'ai_email', name: 'AI Email', category: 'ai', isCore: false },
+    { key: 'ai_chatbot', name: 'AI Chatbot', category: 'ai', isCore: false },
+    // Security/Data
+    { key: 'api_access', name: 'API Access', category: 'security', isCore: false },
+    { key: 'audit_logs', name: 'Audit Logs', category: 'security', isCore: false },
+    { key: 'import_export', name: 'Import/Export', category: 'security', isCore: true },
+  ];
+
+  for (const svc of serviceDefinitions) {
+    await prisma.serviceDefinition.upsert({
+      where: { key: svc.key },
+      update: { name: svc.name, category: svc.category, isCore: svc.isCore },
+      create: { id: randomUUID(), key: svc.key, name: svc.name, category: svc.category, isCore: svc.isCore },
+    });
+  }
 
   // Attach subscription to demo tenant
   await prisma.subscription.upsert({

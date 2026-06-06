@@ -2,15 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
   Building2, TrendingUp, DollarSign, Target, UserPlus, UserMinus,
-  AlertCircle, Activity, Users
+  AlertCircle, Activity, Users, Package
 } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList
 } from 'recharts'
+import { useNavigate } from 'react-router-dom'
 import { superAdminApi } from '../../lib/superAdminApi'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
+import { Button } from '../../components/ui/button'
 import { formatDate } from '../../lib/utils'
 
 const COLORS = ['#7B2FBE', '#C43E8A', '#E8622A', '#22C55E', '#F59E0B', '#3B82F6']
@@ -79,6 +81,13 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 }
 
 export function SuperAdminDashboard() {
+  const navigate = useNavigate()
+  const { data: pendingPackages = [] } = useQuery<Array<{ id: string; tenantId: string; createdAt: string; tenant: { id: string; name: string } }>>({
+    queryKey: ['sa-pending-packages'],
+    queryFn: () => superAdminApi.get('/super-admin/custom-packages/pending').then(r => r.data.data),
+    refetchInterval: 60000,
+  })
+
   const { data: stats, isLoading, error } = useQuery<Stats>({
     queryKey: ['sa-stats'],
     queryFn: () => superAdminApi.get('/super-admin/stats').then(r => r.data.data),
@@ -250,6 +259,41 @@ export function SuperAdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Pending Custom Package Requests */}
+      {pendingPackages.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Package className="h-4 w-4 text-brand-coral" />
+              Pending Custom Package Requests
+              <Badge variant="coral" className="text-[9px] ml-auto">{pendingPackages.length} pending</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pendingPackages.map(pkg => (
+                <div key={pkg.id} className="flex items-center gap-3 text-xs py-2 border-b border-border/50 last:border-0">
+                  <div className="h-7 w-7 rounded-lg bg-brand-coral/15 flex items-center justify-center text-brand-coral font-bold text-[10px] shrink-0">
+                    {pkg.tenant.name[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-text-primary font-medium truncate">{pkg.tenant.name}</p>
+                    <p className="text-text-muted">Requested {formatDate(pkg.createdAt)}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => navigate(`/super-admin/companies/${pkg.tenant.id}/custom-package`)}
+                  >
+                    Configure
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent activity */}
       {stats.recentActivity?.length > 0 && (

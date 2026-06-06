@@ -12,6 +12,8 @@ import { Textarea } from '../components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog'
 import { useToast } from '../components/ui/toast'
 import { formatDate } from '../lib/utils'
+import { useServiceEnabled } from '../hooks/useServiceEnabled'
+import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
 
 interface Campaign {
   id: string
@@ -37,8 +39,11 @@ const statusConfig = {
 }
 
 export function WhatsAppCampaignsPage() {
+  const whatsappEnabled = useServiceEnabled('whatsapp')
   const { success, error: toastError } = useToast()
   const qc = useQueryClient()
+
+  if (!whatsappEnabled) return <ServiceDisabledPlaceholder serviceName="WhatsApp Campaigns" />
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', template: '', message: '', scheduledAt: '' })
 

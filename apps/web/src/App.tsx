@@ -42,6 +42,8 @@ import { SuperAdminUsers } from './pages/super-admin/SuperAdminUsers'
 import { SuperAdminFeatureFlags } from './pages/super-admin/SuperAdminFeatureFlags'
 import { SuperAdminMonitoring } from './pages/super-admin/SuperAdminMonitoring'
 import { SuperAdminAuditLogs } from './pages/super-admin/SuperAdminAuditLogs'
+import { SuperAdminServices } from './pages/super-admin/SuperAdminServices'
+import { SuperAdminCustomPackage } from './pages/super-admin/SuperAdminCustomPackage'
 
 import { ToastProvider } from './components/ui/toast'
 import { useAuthStore } from './store/auth'
@@ -122,6 +124,8 @@ export default function App() {
           <Route path="audit-logs" element={<SuperAdminAuditLogs />} />
           <Route path="monitoring" element={<SuperAdminMonitoring />} />
           <Route path="settings" element={<SuperAdminSettings />} />
+          <Route path="services" element={<SuperAdminServices />} />
+          <Route path="companies/:id/custom-package" element={<SuperAdminCustomPackage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

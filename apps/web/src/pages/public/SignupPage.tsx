@@ -91,7 +91,7 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 // ── Welcome modal shown after successful signup ──────────────────────────────
-function WelcomeModal({ slug, onContinue }: { slug: string; onContinue: () => void }) {
+function WelcomeModal({ slug, onContinue, isCustom }: { slug: string; onContinue: () => void; isCustom?: boolean }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -120,10 +120,12 @@ function WelcomeModal({ slug, onContinue }: { slug: string; onContinue: () => vo
         </div>
 
         <h2 className="font-heading font-bold text-2xl text-text-primary text-center mb-2">
-          Account Created! 🎉
+          {isCustom ? 'Request Submitted!' : 'Account Created! 🎉'}
         </h2>
         <p className="text-text-secondary text-sm text-center mb-6">
-          Your 14-day free trial has started. Save your workspace slug — you'll need it to log in.
+          {isCustom
+            ? 'Your custom package request has been submitted. Our team will configure your services within 24 hours.'
+            : "Your 14-day free trial has started. Save your workspace slug — you'll need it to log in."}
         </p>
 
         {/* Workspace slug box */}
@@ -174,6 +176,7 @@ export function SignupPage() {
   const [showConfirmPw, setShowConfirmPw] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [workspaceSlug, setWorkspaceSlug] = useState<string | null>(null)
+  const [isCustomPackage, setIsCustomPackage] = useState(false)
 
   const { data: plans = [] } = useQuery<Plan[]>({
     queryKey: ['public-plans'],
@@ -193,9 +196,10 @@ export function SignupPage() {
     if (!step1Data) return
     setSubmitting(true)
     try {
+      const planSlug = isCustomPackage ? 'custom' : selectedPlan
       const res = await api.post('/public/register', {
         ...step1Data,
-        planSlug: selectedPlan,
+        planSlug,
         billingCycle: yearly ? 'yearly' : 'monthly',
         name: data.name,
         email: data.email,
@@ -203,7 +207,6 @@ export function SignupPage() {
       })
       const { user, tenant, accessToken, refreshToken } = res.data.data
       setAuth(user, tenant, accessToken, refreshToken)
-      // Show welcome modal with workspace slug
       setWorkspaceSlug(tenant.slug)
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'Signup failed. Please try again.'
@@ -219,6 +222,7 @@ export function SignupPage() {
       {workspaceSlug && (
         <WelcomeModal
           slug={workspaceSlug}
+          isCustom={isCustomPackage}
           onContinue={() => navigate('/dashboard')}
         />
       )}
@@ -329,11 +333,11 @@ export function SignupPage() {
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {plans.map(plan => (
+                    {plans.filter(p => p.slug !== 'custom').map(plan => (
                       <button
                         key={plan.id}
-                        onClick={() => setSelectedPlan(plan.slug)}
-                        className={`w-full p-4 rounded-xl border text-left transition-all ${selectedPlan === plan.slug
+                        onClick={() => { setSelectedPlan(plan.slug); setIsCustomPackage(false) }}
+                        className={`w-full p-4 rounded-xl border text-left transition-all ${!isCustomPackage && selectedPlan === plan.slug
                             ? 'border-brand-purple/60 bg-brand-purple/10 shadow-glow-purple'
                             : 'border-border hover:border-brand-purple/30'
                           }`}
@@ -360,6 +364,28 @@ export function SignupPage() {
                         </div>
                       </button>
                     ))}
+                    {/* Custom Package option */}
+                    <button
+                      onClick={() => { setIsCustomPackage(true); setSelectedPlan('custom') }}
+                      className={`w-full p-4 rounded-xl border text-left transition-all ${isCustomPackage
+                          ? 'border-brand-coral/60 bg-brand-coral/10'
+                          : 'border-border hover:border-brand-coral/30'
+                        }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-heading font-semibold text-text-primary">Custom Package</span>
+                            <span className="text-[10px] bg-brand-coral text-white px-2 py-0.5 rounded-full">Enterprise</span>
+                          </div>
+                          <p className="text-xs text-text-muted mt-0.5">Select specific features you need — Our team will configure your workspace</p>
+                          <p className="text-xs text-brand-coral mt-1">Contact us for pricing</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-heading font-bold text-xl text-text-primary">Custom</span>
+                        </div>
+                      </div>
+                    </button>
                   </div>
                   <div className="flex gap-3 mt-6">
                     <Button variant="secondary" onClick={() => setStep(0)}>

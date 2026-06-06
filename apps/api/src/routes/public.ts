@@ -6,6 +6,7 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { syncTenantServices } from '../lib/syncTenantServices';
 
 const RegisterSchema = z.object({
   // Step 1 — Company
@@ -144,6 +145,13 @@ export async function publicRoutes(fastify: FastifyInstance) {
 
       return [tenant, user];
     });
+
+    // Sync tenant services based on plan
+    try {
+      await fastify.prisma.$transaction(async (tx: any) => {
+        await syncTenantServices(tx, tenant.id, plan.id);
+      });
+    } catch { /* non-fatal */ }
 
     // Issue JWT tokens
     const accessToken = fastify.jwt.sign(

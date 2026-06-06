@@ -128,4 +128,29 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     });
     return { success: true, data: sub };
   });
+
+  // Tenant service status
+  fastify.get('/settings/my-services', async (req) => {
+    const user = req.user as any;
+    const tenantServices = await fastify.prisma.tenantService.findMany({
+      where: { tenantId: user.tenantId },
+      include: { service: true },
+    });
+    return {
+      success: true,
+      data: tenantServices.map((ts: any) => ({
+        key: ts.serviceKey,
+        name: ts.service.name,
+        category: ts.service.category,
+        isCore: ts.service.isCore,
+        globalEnabled: ts.service.isEnabled,
+        tenantEnabled: ts.isEnabled,
+        isMaintenance: ts.service.isMaintenance,
+        maintenanceMsg: ts.service.maintenanceMsg,
+        overridden: ts.overriddenBySuperAdmin,
+        disabledReason: ts.disabledReason,
+        effectiveEnabled: ts.service.isEnabled && ts.isEnabled,
+      })),
+    };
+  });
 }

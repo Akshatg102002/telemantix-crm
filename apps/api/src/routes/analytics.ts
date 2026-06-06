@@ -144,4 +144,32 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     })));
     return { success: true, data };
   });
+
+  fastify.get('/dashboard/service-status', async (req) => {
+    const user = req.user as any;
+    const tenantId = user.tenantId;
+    const tenantServices = await fastify.prisma.tenantService.findMany({
+      where: { tenantId },
+      include: { service: true },
+    });
+    const services = tenantServices.map((ts: any) => ({
+      key: ts.serviceKey,
+      name: ts.service.name,
+      category: ts.service.category,
+      isCore: ts.service.isCore,
+      effectiveEnabled: ts.service.isEnabled && ts.isEnabled,
+      isMaintenance: ts.service.isMaintenance,
+      maintenanceMsg: ts.service.maintenanceMsg,
+      disabledReason: ts.disabledReason,
+    }));
+    const hasIssues = services.filter((s: any) => !s.effectiveEnabled || s.isMaintenance);
+    return {
+      success: true,
+      data: {
+        services,
+        summary: hasIssues.length === 0 ? 'All systems operational' : `${hasIssues.length} service${hasIssues.length !== 1 ? 's' : ''} affected`,
+        hasIssues: hasIssues.length > 0,
+      },
+    };
+  });
 }

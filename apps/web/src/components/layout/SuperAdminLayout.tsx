@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Building2, CreditCard, DollarSign, Settings, LogOut,
-  Shield, Users, BarChart3, Flag, Activity, ScrollText
+  Shield, Users, BarChart3, Flag, Activity, ScrollText, Layers
 } from 'lucide-react'
 import { useSuperAdminStore } from '../../store/superAdmin'
 import { cn } from '../../lib/utils'
@@ -28,6 +28,7 @@ const navGroups = [
     items: [
       { label: 'Users', icon: Users, href: '/super-admin/users' },
       { label: 'Feature Flags', icon: Flag, href: '/super-admin/feature-flags' },
+      { label: 'Services & Integrations', icon: Layers, href: '/super-admin/services' },
     ],
   },
   {

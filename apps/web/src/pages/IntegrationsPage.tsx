@@ -13,6 +13,8 @@ import { Label } from '../components/ui/label'
 import { useToast } from '../components/ui/toast'
 import { api } from '../lib/api'
 import { relativeTime } from '../lib/utils'
+import { useServiceEnabled } from '../hooks/useServiceEnabled'
+import { ServiceDisabledPlaceholder } from '../components/ui/ServiceDisabledPlaceholder'
 
 interface Integration {
   id: string
@@ -38,6 +40,7 @@ const INTEGRATIONS_CONFIG = [
 ]
 
 export function IntegrationsPage() {
+  const metaAdsEnabled = useServiceEnabled('meta_ads')
   const { success, error: toastError } = useToast()
   const qc = useQueryClient()
   const { data: integrations } = useIntegrations()
