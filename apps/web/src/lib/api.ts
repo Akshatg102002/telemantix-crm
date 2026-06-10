@@ -13,9 +13,17 @@ export const api = axios.create({
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().accessToken
-  const tenant = useAuthStore.getState().tenant?.slug || 'demo'
+  const tenant = useAuthStore.getState().tenant?.slug
+
   if (token) config.headers.Authorization = `Bearer ${token}`
-  config.headers['x-tenant'] = tenant
+
+  // Only set x-tenant from store if not already set by the caller.
+  // This allows login (and any other pre-auth call) to pass the tenant
+  // explicitly per-request without the interceptor overwriting it.
+  if (!config.headers['x-tenant']) {
+    config.headers['x-tenant'] = tenant || 'demo'
+  }
+
   return config
 })
 
@@ -30,9 +38,15 @@ api.interceptors.response.use(
       try {
         if (!refreshing) {
           const rt = useAuthStore.getState().refreshToken
+          // Use the tenant from the store (or fall back to the tenant on the
+          // original failed request) so the refresh call hits the right tenant.
+          const tenant =
+            useAuthStore.getState().tenant?.slug ||
+            original.headers['x-tenant'] ||
+            'demo'
           refreshing = axios
             .post(`${BASE_URL}/auth/refresh`, { refreshToken: rt }, {
-              headers: { 'x-tenant': 'demo' },
+              headers: { 'x-tenant': tenant },
             })
             .then(r => {
               const { accessToken, refreshToken } = r.data.data
