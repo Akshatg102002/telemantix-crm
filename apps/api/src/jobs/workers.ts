@@ -3,6 +3,26 @@ import { queueConnection } from '../lib/queue';
 import { prisma } from '../lib/prisma';
 import { emitToTenant } from '../lib/socket';
 import { executeAutomationAction } from '../services/automation.service';
+import { IntegrationService } from '../services/integration.service';
+
+
+const integrationService = new IntegrationService(prisma);
+
+function integrationWorker(queueName: 'indiamart-sync' | 'meta-sync' | 'googleads-sync' | 'exotel-sync', type: string) {
+  return new Worker(
+    queueName,
+    async job => {
+      const tenantId = String(job.data.tenantId);
+      await integrationService.sync(type, tenantId);
+    },
+    { connection: queueConnection, concurrency: 3 }
+  );
+}
+
+export const indiaMartSyncWorker = integrationWorker('indiamart-sync', 'indiamart');
+export const metaSyncWorker = integrationWorker('meta-sync', 'meta');
+export const googleAdsSyncWorker = integrationWorker('googleads-sync', 'google_ads');
+export const exotelSyncWorker = integrationWorker('exotel-sync', 'exotel');
 
 // Follow-up reminder worker — fires 15min before scheduled follow-up
 export const followUpReminderWorker = new Worker(
