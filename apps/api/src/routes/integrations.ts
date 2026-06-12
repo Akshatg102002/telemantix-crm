@@ -1,92 +1,69 @@
 import { FastifyInstance } from 'fastify';
-import { randomUUID } from 'crypto';
 import { requireAuth, requireRole } from '../middleware/auth';
+import { IntegrationService } from '../services/integration.service';
+import { INTEGRATION_DEFINITIONS } from '../services/integrations/types';
 
 export async function integrationRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
+  const service = new IntegrationService(fastify.prisma);
 
   fastify.get('/integrations', async (req) => {
     const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const integrations = await fastify.prisma.integration.findMany({
-      where: { tenantId: user.tenantId },
-      select: { id: true, type: true, name: true, isConnected: true, lastSyncAt: true, webhookToken: true, createdAt: true },
-    });
-    return { success: true, data: integrations };
+    return { success: true, data: await service.list(user.tenantId), definitions: Object.values(INTEGRATION_DEFINITIONS) };
   });
 
-  fastify.get('/integrations/:id', async (req, reply) => {
+  fastify.post('/integrations/:type/connect', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
     const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const { id } = req.params as { id: string };
-    const integration = await fastify.prisma.integration.findFirst({
-      where: { id, tenantId: user.tenantId },
-    });
-    if (!integration) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } });
-    return { success: true, data: integration };
+    const { type } = req.params as { type: string };
+    try {
+      const integration = await service.connect(user.tenantId, type, req.body as Record<string, unknown>, user, { ipAddress: req.ip, userAgent: req.headers['user-agent'] });
+      reply.code(201);
+      return { success: true, data: integration };
+    } catch (err) {
+      return reply.code(400).send({ success: false, error: { code: 'CONNECT_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    }
+  });
+
+  fastify.post('/integrations/:type/test', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
+    const { type } = req.params as { type: string };
+    try {
+      return { success: true, data: await service.test(user.tenantId, type, req.body as Record<string, unknown>, user, { ipAddress: req.ip, userAgent: req.headers['user-agent'] }) };
+    } catch (err) {
+      return reply.code(400).send({ success: false, error: { code: 'TEST_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    }
+  });
+
+  fastify.post('/integrations/:type/disconnect', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
+    const { type } = req.params as { type: string };
+    try {
+      return { success: true, data: await service.disconnect(user.tenantId, type, user, { ipAddress: req.ip, userAgent: req.headers['user-agent'] }) };
+    } catch (err) {
+      return reply.code(404).send({ success: false, error: { code: 'DISCONNECT_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    }
+  });
+
+  fastify.post('/integrations/:type/sync', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
+    const { type } = req.params as { type: string };
+    try {
+      const job = await service.enqueueSync(type, user.tenantId);
+      return { success: true, data: { jobId: job?.id || null } };
+    } catch (err) {
+      return reply.code(400).send({ success: false, error: { code: 'SYNC_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    }
   });
 
   fastify.post('/integrations', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
     const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     const body = req.body as Record<string, unknown>;
-    const existing = await fastify.prisma.integration.findFirst({
-      where: { tenantId: user.tenantId, type: body.type as string },
-    });
-    if (existing) {
-      const updated = await fastify.prisma.integration.update({ where: { id: existing.id }, data: { config: body.config as object, isConnected: true } });
-      return { success: true, data: updated };
-    }
-
-    const integration = await fastify.prisma.integration.create({
-      data: {
-        id: randomUUID(),
-        tenantId: user.tenantId,
-        type: body.type as string,
-        name: body.name as string,
-        config: (body.config as object) || {},
-        webhookToken: randomUUID(),
-        isConnected: true,
-      },
-    });
-    reply.code(201);
-    return { success: true, data: integration };
+    return reply.code(201).send({ success: true, data: await service.connect(user.tenantId, String(body.type), body, user, { ipAddress: req.ip, userAgent: req.headers['user-agent'] }) });
   });
 
-  fastify.patch('/integrations/:id', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+  fastify.delete('/integrations/:type', { preHandler: [requireRole('admin', 'superadmin')] }, async (req) => {
     const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const { id } = req.params as { id: string };
-    const body = req.body as Record<string, unknown>;
-    const integration = await fastify.prisma.integration.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!integration) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } });
-    const updated = await fastify.prisma.integration.update({ where: { id }, data: body });
-    return { success: true, data: updated };
-  });
-
-  fastify.delete('/integrations/:id', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
-    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const { id } = req.params as { id: string };
-    const integration = await fastify.prisma.integration.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!integration) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } });
-    await fastify.prisma.integration.update({ where: { id }, data: { isConnected: false } });
-    return { success: true, data: null };
-  });
-
-  // Regenerate webhook token
-  fastify.post('/integrations/:id/regenerate-token', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
-    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const { id } = req.params as { id: string };
-    const integration = await fastify.prisma.integration.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!integration) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } });
-    const updated = await fastify.prisma.integration.update({ where: { id }, data: { webhookToken: randomUUID() } });
-    return { success: true, data: { webhookToken: updated.webhookToken } };
-  });
-
-  fastify.get('/integrations/:id/webhook-logs', async (req) => {
-    const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
-    const { id } = req.params as { id: string };
-    const logs = await fastify.prisma.webhookLog.findMany({
-      where: { integrationId: id, tenantId: user.tenantId },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
-    return { success: true, data: logs };
+    const { type } = req.params as { type: string };
+    return { success: true, data: await service.disconnect(user.tenantId, type, user) };
   });
 }

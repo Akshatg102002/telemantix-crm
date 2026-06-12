@@ -62,6 +62,27 @@ async function main() {
     )
   );
 
+  // Integration catalog seed data (disconnected until tenant credentials are supplied)
+  const integrationSeeds = [
+    { type: 'meta', name: 'Meta Facebook Lead Ads' },
+    { type: 'whatsapp', name: 'WhatsApp Cloud API' },
+    { type: 'exotel', name: 'Exotel IVR' },
+    { type: 'sendgrid', name: 'SendGrid' },
+    { type: 'resend', name: 'Resend' },
+    { type: 'google_ads', name: 'Google Ads' },
+    { type: 'indiamart', name: 'IndiaMART' },
+    { type: 'justdial', name: 'JustDial' },
+    { type: '99acres', name: '99acres' },
+    { type: 'housing', name: 'Housing.com' },
+  ];
+  for (const integration of integrationSeeds) {
+    await prisma.integration.upsert({
+      where: { tenantId_type: { tenantId: tenant.id, type: integration.type } },
+      update: { name: integration.name },
+      create: { id: randomUUID(), tenantId: tenant.id, ...integration, webhookToken: randomUUID(), status: 'DISCONNECTED' },
+    });
+  }
+
   // Service Boards
   const boardData = [
     { name: 'Real Estate', color: '#7B2FBE' },

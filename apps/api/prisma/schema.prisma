@@ -9,6 +9,15 @@ datasource db {
   schemas  = ["public"]
 }
 
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  SYNCING
+
+  @@schema("public")
+}
+
 // ─── Tenant & Auth ─────────────────────────────────────────────────────────
 
 model Tenant {
@@ -202,6 +211,7 @@ model LeadSource {
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads     Lead[]
 
+  @@unique([tenantId, name])
   @@index([tenantId])
   @@schema("public")
 }
@@ -452,10 +462,13 @@ model Integration {
   tenantId     String
   type         String
   name         String
-  isConnected  Boolean   @default(false)
-  config       Json      @default("{}")
-  webhookToken String?   @unique
-  lastSyncAt   DateTime?
+  isConnected       Boolean           @default(false)
+  status            IntegrationStatus @default(DISCONNECTED)
+  config            Json              @default("{}")
+  webhookToken      String?           @unique
+  lastSyncAt        DateTime?
+  lastError         String?
+  importedLeadCount Int               @default(0)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
