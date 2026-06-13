@@ -2,14 +2,28 @@ import { FastifyInstance } from 'fastify';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { IntegrationService } from '../services/integration.service';
 import { INTEGRATION_DEFINITIONS } from '../services/integrations/types';
+import { EmailService } from '../services/email.service';
 
 export async function integrationRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
   const service = new IntegrationService(fastify.prisma);
+  const emailService = new EmailService(fastify.prisma);
 
   fastify.get('/integrations', async (req) => {
     const user = req.user as { sub: string; tenantId: string; role: string; email?: string };
     return { success: true, data: await service.list(user.tenantId), definitions: Object.values(INTEGRATION_DEFINITIONS) };
+  });
+
+
+  fastify.post('/integrations/resend/send-test', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {
+    const user = req.user as { tenantId: string };
+    const body = req.body as { email?: string };
+    if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) return reply.code(400).send({ success: false, error: { code: 'INVALID_EMAIL', message: 'A valid recipient email is required.' } });
+    try {
+      return { success: true, data: await emailService.sendTestEmail(user.tenantId, body.email) };
+    } catch (err) {
+      return reply.code(400).send({ success: false, error: { code: 'TEST_EMAIL_FAILED', message: err instanceof Error ? err.message : String(err) } });
+    }
   });
 
   fastify.post('/integrations/:type/connect', { preHandler: [requireRole('admin', 'superadmin')] }, async (req, reply) => {

@@ -55,6 +55,7 @@ model Tenant {
   apiKeys             ApiKey[]
   subscription        Subscription?
   integrationSecrets  IntegrationSecret[]
+  emailLogs           EmailLog[]
   tenantServices      TenantService[]
   customPackages      CustomPackage[]
 
@@ -477,6 +478,25 @@ model Integration {
 
   @@unique([tenantId, type])
   @@index([tenantId])
+  @@schema("public")
+}
+
+
+model EmailLog {
+  id                String   @id @default(uuid())
+  tenantId          String
+  to                String
+  from              String
+  subject           String
+  provider          String
+  status            String
+  providerMessageId String?
+  createdAt         DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, provider])
   @@schema("public")
 }
 

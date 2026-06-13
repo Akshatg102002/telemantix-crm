@@ -16,6 +16,7 @@ const pageTitles: Record<string, string> = {
   '/whatsapp-campaigns': 'WhatsApp Campaigns',
   '/automation': 'Automation',
   '/integrations': 'Integrations',
+  '/email-settings': 'Email Settings',
   '/publishers': 'Publishers',
   '/service-boards': 'Service Boards',
   '/users': 'Users',
