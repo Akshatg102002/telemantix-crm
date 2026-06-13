@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { AlertCircle, CheckCircle, Clock, Copy, PlugZap, RefreshCw, Settings, TestTube2, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, Copy, Mail, PlugZap, RefreshCw, Settings, TestTube2, XCircle } from 'lucide-react'
 import { BRAND_ICONS } from '../assets/brands'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useIntegrations } from '../hooks/useApi'
@@ -58,6 +58,8 @@ export function IntegrationsPage() {
   const [configuring, setConfiguring] = useState<typeof INTEGRATIONS_CONFIG[0] | null>(null)
   const [configValues, setConfigValues] = useState<Record<string, string>>({})
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({})
+  const [testEmailOpen, setTestEmailOpen] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
 
   const getIntegration = (type: string): Integration | undefined => (integrations || []).find((i: Integration) => i.type === type)
 
@@ -83,6 +85,12 @@ export function IntegrationsPage() {
     mutationFn: async (type: string) => api.post(`/integrations/${type}/sync`, {}),
     onSuccess: () => { success('Sync job queued'); qc.invalidateQueries({ queryKey: ['integrations'] }) },
     onError: () => toastError('Failed to queue sync'),
+  })
+
+  const sendTestEmailMutation = useMutation({
+    mutationFn: async () => api.post('/integrations/resend/send-test', { email: testEmail }),
+    onSuccess: () => { success('Test email sent'); setTestEmailOpen(false); setTestEmail('') },
+    onError: (err: any) => toastError(err?.response?.data?.error?.message || 'Failed to send test email'),
   })
 
   const openConfig = (cfg: typeof INTEGRATIONS_CONFIG[0], existing?: Integration) => {
@@ -158,6 +166,7 @@ export function IntegrationsPage() {
                     <Button size="sm" variant="secondary" onClick={() => openConfig(cfg, integration)}><Settings className="h-3.5 w-3.5" /> Configure</Button>
                     <Button size="sm" variant="secondary" disabled={!integration} loading={testMutation.isPending} onClick={() => testMutation.mutate(cfg.type)}><TestTube2 className="h-3.5 w-3.5" /> Test</Button>
                     <Button size="sm" variant="secondary" disabled={!integration?.isConnected} loading={syncMutation.isPending} onClick={() => syncMutation.mutate(cfg.type)}><RefreshCw className="h-3.5 w-3.5" /> Sync</Button>
+                    {cfg.type === 'resend' && <Button size="sm" variant="secondary" disabled={!integration?.isConnected} onClick={() => setTestEmailOpen(true)}><Mail className="h-3.5 w-3.5" /> Send Test Email</Button>}
                     {integration?.isConnected && <Button size="sm" variant="ghost" loading={disconnectMutation.isPending} onClick={() => disconnectMutation.mutate(cfg.type)}>Disconnect</Button>}
                   </div>
                 </CardContent>
@@ -166,6 +175,20 @@ export function IntegrationsPage() {
           )
         })}
       </div>
+
+      <Dialog open={testEmailOpen} onOpenChange={setTestEmailOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Mail className="h-4 w-4" /> Send Resend Test Email</DialogTitle></DialogHeader>
+          <div className="p-6 space-y-1.5">
+            <Label>Recipient email</Label>
+            <Input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@example.com" />
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setTestEmailOpen(false)}>Cancel</Button>
+            <Button loading={sendTestEmailMutation.isPending} onClick={() => sendTestEmailMutation.mutate()}>Send Test Email</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!configuring} onOpenChange={v => !v && setConfiguring(null)}>
         <DialogContent>

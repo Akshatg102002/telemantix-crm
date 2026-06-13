@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Users, Target, Calendar, Zap, BarChart3, Plug, Settings,
   Bell, CheckSquare, FolderKanban, Globe, BookOpen, ChevronLeft, ChevronRight,
-  CreditCard, MessageSquare, UserCircle2, Shield, FolderInput
+  CreditCard, MessageSquare, UserCircle2, Shield, FolderInput, Mail
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUiStore } from '../../store/ui'
@@ -39,6 +39,7 @@ const navGroups = [
     label: 'Platform',
     items: [
       { label: 'Integrations', icon: Plug, href: '/integrations' },
+      { label: 'Email Settings', icon: Mail, href: '/email-settings' },
       { label: 'Service Boards', icon: BookOpen, href: '/service-boards' },
       { label: 'Publishers', icon: Globe, href: '/publishers' },
       { label: 'Users', icon: Users, href: '/users' },

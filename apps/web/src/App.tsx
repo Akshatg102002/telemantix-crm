@@ -29,6 +29,7 @@ import { WhatsAppCampaignsPage } from './pages/WhatsAppCampaignsPage'
 import { FeatureAccessPage } from './pages/FeatureAccessPage'
 import { SecurityPage } from './pages/SecurityPage'
 import { ImportExportPage } from './pages/ImportExportPage'
+import { EmailSettingsPage } from './pages/EmailSettingsPage'
 
 // Super Admin
 import { SuperAdminLogin } from './pages/super-admin/SuperAdminLogin'
@@ -107,6 +108,7 @@ export default function App() {
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/security" element={<SecurityPage />} />
           <Route path="/tools" element={<ImportExportPage />} />
+          <Route path="/email-settings" element={<EmailSettingsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 

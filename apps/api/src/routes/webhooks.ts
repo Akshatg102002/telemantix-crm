@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { IntegrationService } from '../services/integration.service';
+import { EmailService } from '../services/email.service';
 
 const PORTAL_TYPES = ['whatsapp', 'exotel', 'indiamart', 'justdial', '99acres', 'housing'] as const;
 
 export async function webhookRoutes(fastify: FastifyInstance) {
   const service = new IntegrationService(fastify.prisma);
+  const emailService = new EmailService(fastify.prisma);
 
   async function handle(type: string, req: any, reply: any) {
     const query = req.query as Record<string, string>;
@@ -46,4 +48,5 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     }
     return { success: true, data: results };
   });
+  fastify.post('/webhooks/resend', async (req) => ({ success: true, data: await emailService.handleResendWebhook(req.body as Record<string, unknown>) }));
 }
